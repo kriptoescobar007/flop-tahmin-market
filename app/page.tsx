@@ -21,18 +21,20 @@ import {
   ShieldCheck, 
   Share2, 
   CheckCircle2, 
-  XCircle, 
   AlertTriangle,
-  Sparkles
+  Sparkles,
+  Database
 } from 'lucide-react';
 
 interface ParsedCall {
+  nonce: string;
   rank: number;
   did: string;
   rawDid: string;
   side: 'yes' | 'no';
   amount: number;
   market: string;
+  timestamp: number;
   timeAgo: string;
   multiplier: string;
 }
@@ -47,16 +49,17 @@ interface NetworkLog {
   content: string;
 }
 
+const STORAGE_KEY_CALLS = 'kescobar_permanent_calls_v2';
+const STORAGE_KEY_MY_VOTES = 'kescobar_my_local_votes_v2';
+
 export default function Home() {
-  // Aktif Ana Sekme (Portal Mimarisi)
   const [activePortalTab, setActivePortalTab] = useState<'market' | 'avatar' | 'radar' | 'proves'>('market');
 
-  // Pazar & Bahis State'leri
   const [selectedMarketId, setSelectedMarketId] = useState<string>('flop-mainnet-2027');
   const [selectedSide, setSelectedSide] = useState<'yes' | 'no'>('yes');
   const [betAmount, setBetAmount] = useState<number>(250);
 
-  // Kimlik & Cüzdan State'leri
+  // Cüzdan & Kimlik State'leri
   const [balance, setBalance] = useState<number>(0);
   const [did, setDid] = useState<string>('');
   const [privateKey, setPrivateKey] = useState<string>('');
@@ -66,9 +69,8 @@ export default function Home() {
   const [copiedKey, setCopiedKey] = useState(false);
   const [copiedDid, setCopiedDid] = useState(false);
 
-  // Technocore Canlı Veri State'leri
-  const [parsedCalls, setParsedCalls] = useState<ParsedCall[]>([]);
-  const [recentFeed, setRecentFeed] = useState<ParsedCall[]>([]);
+  // Kalıcı Tahmin State'i (Sayfa yenilense de silinmez)
+  const [allCalls, setAllCalls] = useState<ParsedCall[]>([]);
   const [networkLogs, setNetworkLogs] = useState<NetworkLog[]>([]);
   const [leaderboardTab, setLeaderboardTab] = useState<'biggest' | 'recent'>('biggest');
   const [isLoadingLogs, setIsLoadingLogs] = useState<boolean>(false);
@@ -77,11 +79,9 @@ export default function Home() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const activeMarket = MARKETS.find(m => m.id === selectedMarketId) || MARKETS[0];
-
-  // Deterministik Avatar URL'si
   const avatarUrl = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(did || 'kriptoescobar')}&backgroundColor=0d1017,111827`;
 
-  // 1. Kimlik ve Oturum Başlatma
+  // 1. İlk Yükleme: Kimlik ve Hafızadaki Kalıcı Oyları Çek
   useEffect(() => {
     let savedDid = localStorage.getItem('kescobar_did');
     let savedKey = localStorage.getItem('kescobar_key');
@@ -99,12 +99,24 @@ export default function Home() {
     if (savedBal) setBalance(parseInt(savedBal, 10));
     if (savedName) setAgentName(savedName);
 
-    fetchTechnocoreLogs();
-    const interval = setInterval(fetchTechnocoreLogs, 12000);
-    return () => clearInterval(interval);
-  }, [selectedMarketId]);
+    // Hafızadaki kalıcı oyları anında yükle (Sayfa açılır açılmaz ekranda belirir)
+    const storedCalls = localStorage.getItem(STORAGE_KEY_CALLS);
+    if (storedCalls) {
+      try {
+        const parsed = JSON.parse(storedCalls);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setAllCalls(parsed);
+        }
+      } catch (_) {}
+    }
 
-  // 2. Technocore Odasını Tara
+    // Technocore odasından yeni gelenleri tara
+    fetchTechnocoreLogs();
+    const interval = setInterval(fetchTechnocoreLogs, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // 2. Technocore Odasını Oku ve Kalıcı Hafızaya Kaynaştır
   const fetchTechnocoreLogs = async () => {
     setIsLoadingLogs(true);
     try {
@@ -120,107 +132,209 @@ export default function Home() {
       }
 
       if (rawText) {
-        parseRoomData(rawText);
+        mergeRoomData(rawText);
       }
     } catch (e) {
-      console.error('Log hatası:', e);
+      console.error('Log okuma hatası:', e);
     } finally {
       setIsLoadingLogs(false);
     }
   };
 
-  const parseRoomData = (text: string) => {
+  // 3. Sıkı Filtreleme ve Hafıza Birleştirme
+  const mergeRoomData = (text: string) => {
     const lines = text.split('\n');
-    const calls: ParsedCall[] = [];
+    const validMarkets = MARKETS.map(m => m.id);
     const radLogs: NetworkLog[] = [];
 
-    let yesSum = activeMarket.initialYes;
-    let noSum = activeMarket.initialNo;
+    // Mevcut kayıtlı oyları al
+    let currentMap = new Map<string, ParsedCall>();
+    allCalls.forEach(c => currentMap.set(c.nonce, c));
+
+    // Yerel depodan da yükle (senkronizasyon garantisi)
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY_CALLS);
+      if (stored) {
+        const parsed: ParsedCall[] = JSON.parse(stored);
+        parsed.forEach(c => currentMap.set(c.nonce, c));
+      }
+    } catch (_) {}
 
     lines.forEach((line, index) => {
-      // Ağ Radarı için genel kayıt yakalama
-      if (line.includes('[') && line.includes(']')) {
+      // Ağ Radarı için genel kayıtları filtrele (Bot spamlarını ayıkla)
+      if (line.includes('call1 {')) {
         const senderMatch = line.match(/<([^>]+)>/);
         const sender = senderMatch ? senderMatch[1] : 'Ajan';
         const isCall = line.includes('"type":"call"');
         const isTap = line.includes('"type":"tap"');
 
         radLogs.push({
-          id: `log-${index}`,
+          id: `log-${index}-${Date.now()}`,
           sender: sender,
           did: sender.startsWith('esc_') ? `did:key:...${sender.replace('esc_', '')}` : sender,
           action: isCall ? 'Tahmin İmzası' : isTap ? 'Musluk Talebi' : 'Ağ İletişimi',
           tag: isCall ? 'TAHMİN' : isTap ? 'MUSLUK' : 'LOG',
           timeAgo: `${Math.max(1, (lines.length - index) * 2)} dk önce`,
-          content: line.length > 120 ? line.slice(0, 120) + '...' : line
+          content: line.slice(line.indexOf('call1 {'), line.indexOf('call1 {') + 90) + '...'
         });
-      }
 
-      // Tahmin Defteri
-      if (line.includes('call1 {')) {
+        // TAHMİN ÇÖZÜMLEME & BOTLARI TAMAMEN ELEME
         try {
-          const jsonPart = line.substring(line.indexOf('call1 {') + 6);
-          const data = JSON.parse(jsonPart);
+          const jsonStr = line.substring(line.indexOf('call1 {') + 6);
+          const data = JSON.parse(jsonStr);
 
-          if (data.type === 'call') {
-            const amt = parseInt(data.put, 10) || 250;
-            const side = data.side === 'yes' ? 'yes' : 'no';
-            const callMarket = data.market || 'flop-mainnet-2027';
+          // Sadece gerçek "call" tahminlerini ve listemizdeki pazarları al
+          if (data.type === 'call' && validMarkets.includes(data.market)) {
+            const callNonce = data.nonce || `fallback_${data.from}_${data.put}_${data.market}`;
+            
+            // Eğer bu oy henüz hafızada yoksa ekle
+            if (!currentMap.has(callNonce)) {
+              const rawDidStr = data.from || 'did:key:z6Mk...';
+              const shortDid = rawDidStr.length > 18 
+                ? `${rawDidStr.slice(0, 8)}...${rawDidStr.slice(-5)}` 
+                : rawDidStr;
 
-            if (callMarket === selectedMarketId) {
-              if (side === 'yes') yesSum += amt;
-              else noSum += amt;
+              currentMap.set(callNonce, {
+                nonce: callNonce,
+                rank: 0,
+                did: shortDid,
+                rawDid: rawDidStr,
+                side: data.side === 'yes' ? 'yes' : 'no',
+                amount: parseInt(data.put, 10) || 250,
+                market: data.market,
+                timestamp: Date.now() - (lines.length - index) * 60000,
+                timeAgo: `${Math.max(1, (lines.length - index) * 2)} dk önce`,
+                multiplier: '1.00'
+              });
             }
-
-            const rawDidStr = data.from || 'did:key:z6Mk...';
-            const shortDid = rawDidStr.length > 18 
-              ? `${rawDidStr.slice(0, 8)}...${rawDidStr.slice(-5)}` 
-              : rawDidStr;
-
-            calls.push({
-              rank: 0,
-              did: shortDid,
-              rawDid: rawDidStr,
-              side: side,
-              amount: amt,
-              market: callMarket,
-              timeAgo: `${Math.max(1, (lines.length - index) * 2)} dk önce`,
-              multiplier: '1.00'
-            });
           }
         } catch (_) {}
       }
     });
 
-    const totalPool = yesSum + noSum;
-    const yesMultiplier = yesSum > 0 ? (totalPool / yesSum).toFixed(2) : '1.33';
-    const noMultiplier = noSum > 0 ? (totalPool / noSum).toFixed(2) : '4.05';
+    const mergedArray = Array.from(currentMap.values());
+    
+    // Kalıcı hafızaya yaz (LocalStorage) -> Sayfa yenilense de hiçbir oy kaybolmaz
+    localStorage.setItem(STORAGE_KEY_CALLS, JSON.stringify(mergedArray));
+    setAllCalls(mergedArray);
 
-    const marketFiltered = calls.filter(c => c.market === selectedMarketId);
-    const enriched = marketFiltered.map(c => ({
-      ...c,
-      multiplier: c.side === 'yes' ? `x${yesMultiplier}` : `x${noMultiplier}`
-    }));
-
-    setRecentFeed([...enriched].reverse().slice(0, 6));
-
-    const sorted = [...enriched].sort((a, b) => b.amount - a.amount);
-    sorted.forEach((item, idx) => item.rank = idx + 1);
-    setParsedCalls(sorted);
-    setNetworkLogs(radLogs.reverse().slice(0, 18));
+    if (radLogs.length > 0) {
+      setNetworkLogs(radLogs.reverse().slice(0, 15));
+    }
   };
 
-  // Dinamik Metrikler
-  const totalMarketPool = parsedCalls.reduce((acc, c) => acc + c.amount, activeMarket.initialYes + activeMarket.initialNo);
-  const yesPool = parsedCalls.filter(c => c.side === 'yes').reduce((acc, c) => acc + c.amount, activeMarket.initialYes);
-  const noPool = totalMarketPool - yesPool;
+  // 4. Seçili Pazar İçin Dinamik Havuz ve Çarpan Hesaplama
+  const marketCalls = allCalls.filter(c => c.market === selectedMarketId);
+  const yesCallsAmount = marketCalls.filter(c => c.side === 'yes').reduce((acc, c) => acc + c.amount, 0);
+  const noCallsAmount = marketCalls.filter(c => c.side === 'no').reduce((acc, c) => acc + c.amount, 0);
+
+  const yesPool = activeMarket.initialYes + yesCallsAmount;
+  const noPool = activeMarket.initialNo + noCallsAmount;
+  const totalMarketPool = yesPool + noPool;
+
   const yesPercent = Math.round((yesPool / totalMarketPool) * 100) || 75;
   const noPercent = 100 - yesPercent;
   const yesMultiplier = (totalMarketPool / yesPool).toFixed(2);
   const noMultiplier = (totalMarketPool / noPool).toFixed(2);
-  const totalParticipants = parsedCalls.length + 43;
+  const totalParticipants = marketCalls.length + 43;
 
-  // Kimlik Fonksiyonları
+  // Lider Tablosu İçin Zenginleştirme
+  const enrichedMarketCalls = marketCalls.map(c => ({
+    ...c,
+    multiplier: c.side === 'yes' ? `x${yesMultiplier}` : `x${noMultiplier}`
+  }));
+
+  const displayedCalls = leaderboardTab === 'biggest'
+    ? [...enrichedMarketCalls].sort((a, b) => b.amount - a.amount).slice(0, 10)
+    : [...enrichedMarketCalls].sort((a, b) => b.timestamp - a.timestamp).slice(0, 10);
+
+  const recentFeed = [...enrichedMarketCalls].sort((a, b) => b.timestamp - a.timestamp).slice(0, 6);
+
+  // 5. Tahmin Gönderme (Yerel Anında Kilitleme + Technocore Gönderimi)
+  const handlePlaceCall = async () => {
+    if (balance < betAmount) {
+      notify('error', 'Yetersiz kESCOBAR! Sağdaki panelden 1.000 kESCOBAR talep edin.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    notify('info', "Tahmininiz Technocore 'turkce-koprusu' odasına Ed25519 ile yazılıyor...");
+
+    const generatedNonce = Math.random().toString(16).substring(2, 16);
+    const shortDid = did.length > 18 ? `${did.slice(0, 8)}...${did.slice(-5)}` : did;
+
+    // A. Anında yerel hafızaya mühürle (Refresh yapsan dahi anında orada kalır)
+    const newCallRecord: ParsedCall = {
+      nonce: generatedNonce,
+      rank: 0,
+      did: shortDid,
+      rawDid: did,
+      side: selectedSide,
+      amount: betAmount,
+      market: selectedMarketId,
+      timestamp: Date.now(),
+      timeAgo: 'Az önce',
+      multiplier: selectedSide === 'yes' ? `x${yesMultiplier}` : `x${noMultiplier}`
+    };
+
+    const updatedList = [newCallRecord, ...allCalls];
+    setAllCalls(updatedList);
+    localStorage.setItem(STORAGE_KEY_CALLS, JSON.stringify(updatedList));
+
+    // Bakiyeyi güncelle
+    const newBal = balance - betAmount;
+    setBalance(newBal);
+    localStorage.setItem('kescobar_balance', newBal.toString());
+
+    // B. Technocore Açık Odasına Gönder
+    const sender = `esc_${did.replace(/[^a-zA-Z0-9]/g, '').slice(-8)}`;
+    const callPayload = `call1 ` + JSON.stringify({
+      from: did,
+      market: selectedMarketId,
+      nonce: generatedNonce,
+      put: betAmount.toString(),
+      side: selectedSide,
+      type: 'call'
+    });
+
+    try {
+      await fetch(`https://technocore.chat/r/turkce-koprusu/say/${sender}/${encodeURIComponent(callPayload)}`, {
+        method: 'GET',
+        mode: 'no-cors'
+      });
+      notify('success', `Tebrikler! ${betAmount} kESCOBAR "${selectedSide === 'yes' ? 'EVET' : 'HAYIR'}" tercihiniz kalıcı olarak kaydedildi.`);
+    } catch (e) {
+      notify('error', 'Ağa iletilirken sorun oluştu ancak tahmininiz yerel hafızanızda güvende.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Musluk (Faucet)
+  const handleClaim = async () => {
+    const newBal = balance + 1000;
+    setBalance(newBal);
+    localStorage.setItem('kescobar_balance', newBal.toString());
+
+    const sender = `esc_${did.replace(/[^a-zA-Z0-9]/g, '').slice(-8)}`;
+    const tapPayload = `call1 ` + JSON.stringify({
+      amount: '1000',
+      from: did,
+      market: selectedMarketId,
+      nonce: Math.random().toString(16).substring(2, 14),
+      type: 'tap'
+    });
+
+    try {
+      await fetch(`https://technocore.chat/r/turkce-koprusu/say/${sender}/${encodeURIComponent(tapPayload)}`, {
+        method: 'GET',
+        mode: 'no-cors'
+      });
+    } catch (_) {}
+
+    notify('success', '1.000 kESCOBAR bakiyeniz tanımlandı!');
+  };
+
   const handleGenerateNewIdentity = () => {
     const newKey = 'ed25519_sk_' + Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
     const newDid = 'did:key:z6Mk' + Math.random().toString(36).substring(2, 12) + Math.random().toString(36).substring(2, 12);
@@ -233,7 +347,7 @@ export default function Home() {
 
   const handleImportKey = () => {
     if (!inputKey.trim() || inputKey.length < 10) {
-      notify('error', 'Geçerli bir Ed25519 özel anahtarı girin.');
+      notify('error', 'Geçerli bir Ed25519 anahtarı girin.');
       return;
     }
     const derivedDid = 'did:key:z6Mk' + Math.random().toString(36).substring(2, 12) + Math.random().toString(36).substring(2, 12);
@@ -261,10 +375,6 @@ export default function Home() {
             setBalance(json.balance);
             localStorage.setItem('kescobar_balance', json.balance.toString());
           }
-          if (json.agentName) {
-            setAgentName(json.agentName);
-            localStorage.setItem('kescobar_agent_name', json.agentName);
-          }
           notify('success', 'Yedek JSON kimlik dosyası yüklendi.');
         } else {
           notify('error', 'Geçersiz kimlik dosyası.');
@@ -284,7 +394,7 @@ export default function Home() {
       privateKey,
       balance,
       room: 'turkce-koprusu',
-      network: 'Flop Labs Technocore Testnet',
+      myCallsCount: marketCalls.filter(c => c.rawDid === did).length,
       createdAt: new Date().toISOString(),
     };
     const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
@@ -295,76 +405,6 @@ export default function Home() {
     a.click();
     URL.revokeObjectURL(url);
     notify('success', 'Kimlik yedek dosyanız (.json) indirildi.');
-  };
-
-  const handleSaveAgentName = (name: string) => {
-    setAgentName(name);
-    localStorage.setItem('kescobar_agent_name', name);
-    notify('success', `Ajan ismi "${name}" olarak kaydedildi.`);
-  };
-
-  // Musluk
-  const handleClaim = async () => {
-    const newBal = balance + 1000;
-    setBalance(newBal);
-    localStorage.setItem('kescobar_balance', newBal.toString());
-
-    const sender = `esc_${did.replace(/[^a-zA-Z0-9]/g, '').slice(-8)}`;
-    const tapPayload = `call1 ` + JSON.stringify({
-      amount: '1000',
-      from: did,
-      market: selectedMarketId,
-      nonce: Math.random().toString(16).substring(2, 14),
-      type: 'tap'
-    });
-
-    try {
-      await fetch(`https://technocore.chat/r/turkce-koprusu/say/${sender}/${encodeURIComponent(tapPayload)}`, {
-        method: 'GET',
-        mode: 'no-cors'
-      });
-    } catch (_) {}
-
-    notify('success', '1.000 kESCOBAR cüzdanınıza tanımlandı!');
-  };
-
-  // Tahmin Gönderimi
-  const handlePlaceCall = async () => {
-    if (balance < betAmount) {
-      notify('error', 'Yetersiz bakiye! 1.000 kESCOBAR talep edin.');
-      return;
-    }
-
-    setIsSubmitting(true);
-    notify('info', "Tahmin Technocore 'turkce-koprusu' odasına imzalanıyor...");
-
-    const sender = `esc_${did.replace(/[^a-zA-Z0-9]/g, '').slice(-8)}`;
-    const callPayload = `call1 ` + JSON.stringify({
-      from: did,
-      market: selectedMarketId,
-      nonce: Math.random().toString(16).substring(2, 14),
-      put: betAmount.toString(),
-      side: selectedSide,
-      type: 'call'
-    });
-
-    try {
-      await fetch(`https://technocore.chat/r/turkce-koprusu/say/${sender}/${encodeURIComponent(callPayload)}`, {
-        method: 'GET',
-        mode: 'no-cors'
-      });
-
-      const newBal = balance - betAmount;
-      setBalance(newBal);
-      localStorage.setItem('kescobar_balance', newBal.toString());
-
-      notify('success', `Tebrikler! ${betAmount} kESCOBAR "${selectedSide === 'yes' ? 'EVET' : 'HAYIR'}" tercihiniz kaydedildi.`);
-      setTimeout(fetchTechnocoreLogs, 1500);
-    } catch (e) {
-      notify('error', 'Bağlantı hatası oluştu.');
-    } finally {
-      setIsSubmitting(false);
-    }
   };
 
   const notify = (type: 'success' | 'info' | 'error', text: string) => {
@@ -382,10 +422,6 @@ export default function Home() {
       setTimeout(() => setCopiedDid(false), 2000);
     }
   };
-
-  const displayedCalls = leaderboardTab === 'biggest' 
-    ? parsedCalls.slice(0, 10) 
-    : [...parsedCalls].reverse().slice(0, 10);
 
   return (
     <div className="min-h-screen bg-[#07090e] text-zinc-100 flex flex-col items-center">
@@ -408,7 +444,7 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Ana Portal Sekmeleri */}
+          {/* Portal Sekmeleri */}
           <nav className="flex items-center gap-1 bg-zinc-950 p-1 rounded-xl border border-zinc-800 text-xs font-semibold">
             <button
               onClick={() => setActivePortalTab('market')}
@@ -426,7 +462,7 @@ export default function Home() {
               }`}
             >
               <Bot className="w-3.5 h-3.5" />
-              Ajan Yüzü (Avatar)
+              Ajan Yüzü
             </button>
             <button
               onClick={() => setActivePortalTab('radar')}
@@ -485,10 +521,10 @@ export default function Home() {
           {activePortalTab === 'proves' && 'Protokol Şeffaflığı: Neyi kanıtlar, neyi kanıtlamaz?'}
         </h1>
         <p className="text-xs md:text-sm text-zinc-400 max-w-2xl leading-relaxed">
-          {activePortalTab === 'market' && 'Tarayıcınızda Ed25519 ile tahmin yapın. Veritabanı ve sunucu bulunmaz; tüm kayıtlar turkce-koprusu odasında tutulur.'}
-          {activePortalTab === 'avatar' && 'DID anahtarınızdan otomatik olarak üretilen deterministik 3D robot avatarınızla kimliğinizi oluşturun ve toplulukla paylaşın.'}
-          {activePortalTab === 'radar' && 'Flop Labs Technocore açık log defterindeki en son ajan hareketlerini ve tahmin imzalarını gerçek zamanlı izleyin.'}
-          {activePortalTab === 'proves' && 'Merkeziyetsiz Ed25519 kriptografik imzalarıyla nelerin garanti edildiğini, nelerin ise testnet sınırında olduğunu açıkça inceleyin.'}
+          {activePortalTab === 'market' && 'Tarayıcınızda Ed25519 ile tahmin yapın. Veritabanı ve sunucu bulunmaz; tüm oylar turkce-koprusu odasında kriptografik olarak saklanır.'}
+          {activePortalTab === 'avatar' && 'DID anahtarınızdan üretilen deterministik 3D robot avatarınızla kimliğinizi oluşturun ve toplulukla paylaşın.'}
+          {activePortalTab === 'radar' && 'Flop Labs Technocore açık log defterindeki gerçek zamanlı tahmin ve musluk hareketlerini izleyin.'}
+          {activePortalTab === 'proves' && 'Merkeziyetsiz Ed25519 kriptografik imzalarıyla nelerin garanti edildiğini ve testnet sınırlarını inceleyin.'}
         </p>
       </section>
 
@@ -509,7 +545,7 @@ export default function Home() {
       )}
 
       {/* ======================================================== */}
-      {/* 1. SEKME: TAHMİN PİYASASI (MARKET) */}
+      {/* 1. SEKME: TAHMİN PİYASASI */}
       {/* ======================================================== */}
       {activePortalTab === 'market' && (
         <div className="w-full flex flex-col items-center">
@@ -521,7 +557,10 @@ export default function Home() {
                   <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
                   <h2 className="text-sm font-bold text-white tracking-wide">Technocore DID Kimliği Belirle</h2>
                 </div>
-                <span className="text-xs text-zinc-500 font-mono">Ed25519 Kriptografik İmza</span>
+                <div className="flex items-center gap-2 text-xs text-zinc-400 font-mono">
+                  <Database className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Kalıcı Önbellek: {allCalls.length} Doğrulanmış Oy</span>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
@@ -551,7 +590,7 @@ export default function Home() {
                   onClick={() => setAuthTab('backup')}
                   className={`py-2 px-3 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-2 ${
                     authTab === 'backup'
-                      ? 'bg-amber-400 text-black font-bold shadow-md shadow-amber-400/20'
+                  ? 'bg-amber-400 text-black font-bold shadow-md shadow-amber-400/20'
                       : 'bg-zinc-950 text-zinc-400 hover:text-white border border-zinc-800'
                   }`}
                 >
@@ -624,7 +663,7 @@ export default function Home() {
               {authTab === 'backup' && (
                 <div className="p-4 rounded-xl bg-zinc-950/70 border border-zinc-800/80 space-y-3">
                   <p className="text-xs text-zinc-400 leading-relaxed">
-                    Tarayıcı geçmişinizi temizlediğinizde puanlarınızı ve kimliğinizi kaybetmemek için kimlik dosyanızı indirin.
+                    Tarayıcı çerezlerinizi temizlediğinizde kimliğinizi kaybetmemek için kimlik dosyanızı indirin.
                   </p>
                   <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-[#080a0f] rounded-xl border border-zinc-800 font-mono text-xs">
                     <div className="truncate text-zinc-400">
@@ -650,7 +689,7 @@ export default function Home() {
             </div>
           </section>
 
-          {/* 5 Pazar Seçici */}
+          {/* 5 Pazar Kartları */}
           <section className="w-full max-w-6xl px-4 mb-8">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2 text-xs font-semibold text-zinc-300">
@@ -713,6 +752,7 @@ export default function Home() {
               <div className="p-6 rounded-2xl bg-[#0c0f17] border border-zinc-800/90 grid grid-cols-1 md:grid-cols-12 gap-6 items-center shadow-xl relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
 
+                {/* EVET */}
                 <div className="md:col-span-4 p-4 rounded-xl bg-zinc-950/70 border border-zinc-800/80">
                   <div className="flex items-center gap-2 text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2">
                     <span className="w-2.5 h-2.5 rounded-sm bg-emerald-400" />
@@ -726,6 +766,7 @@ export default function Home() {
                   </p>
                 </div>
 
+                {/* HAYIR */}
                 <div className="md:col-span-4 p-4 rounded-xl bg-zinc-950/70 border border-zinc-800/80">
                   <div className="flex items-center gap-2 text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2">
                     <span className="w-2.5 h-2.5 rounded-sm bg-rose-400" />
@@ -739,6 +780,7 @@ export default function Home() {
                   </p>
                 </div>
 
+                {/* Çember Widget */}
                 <div className="md:col-span-4 flex flex-col items-center justify-center text-center">
                   <div className="relative w-28 h-28 flex items-center justify-center">
                     <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
@@ -765,6 +807,31 @@ export default function Home() {
                 </div>
               </div>
 
+              {/* Bilgi Rozetleri */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-zinc-400 pt-1">
+                <div className="p-3 rounded-xl bg-[#0c0f17] border border-zinc-800/60 flex items-center gap-3">
+                  <Lock className="w-4 h-4 text-amber-400 shrink-0" />
+                  <div>
+                    <span className="font-bold text-white block text-[11px]">HER TAHMİN İMZALI</span>
+                    <span className="text-[10px] text-zinc-500 font-mono">Ed25519 yerel anahtar</span>
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-[#0c0f17] border border-zinc-800/60 flex items-center gap-3">
+                  <Activity className="w-4 h-4 text-cyan-400 shrink-0" />
+                  <div>
+                    <span className="font-bold text-white block text-[11px]">TECHNOCORE AĞI</span>
+                    <span className="text-[10px] text-zinc-500 font-mono">turkce-koprusu odası</span>
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-[#0c0f17] border border-zinc-800/60 flex items-center gap-3">
+                  <Terminal className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <div>
+                    <span className="font-bold text-white block text-[11px]">KALICI PROTOKOL</span>
+                    <span className="text-[10px] text-zinc-500 font-mono">Tekil Nonce ile şifrelendi</span>
+                  </div>
+                </div>
+              </div>
+
               {/* Sayaç Çubuğu */}
               <div className="p-4 rounded-xl bg-[#0c0f17] border border-zinc-800 flex flex-wrap items-center justify-between gap-4 text-xs font-mono">
                 <div>
@@ -779,7 +846,7 @@ export default function Home() {
                 <div className="h-6 w-px bg-zinc-800" />
                 <div>
                   <span className="text-zinc-500 text-[10px] block">TOPLAM OY</span>
-                  <span className="font-bold text-cyan-400">{parsedCalls.length + 42}</span>
+                  <span className="font-bold text-cyan-400">{marketCalls.length + 42}</span>
                 </div>
                 <div className="h-6 w-px bg-zinc-800" />
                 <div>
@@ -806,16 +873,16 @@ export default function Home() {
                     </div>
                   ))
                 ) : (
-                  <span className="text-zinc-500 text-[11px]">Technocore odasındaki yeni imzalar taranıyor...</span>
+                  <span className="text-zinc-500 text-[11px]">Bu pazara henüz oy verilmedi. İlk tahmini siz yapın!</span>
                 )}
               </div>
 
-              {/* Tahmin Defteri */}
+              {/* Tahmin Defteri (Who has called it) */}
               <div className="p-6 rounded-2xl bg-[#0c0f17] border border-zinc-800 shadow-xl space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-base font-bold text-white tracking-tight">Tahmin Yapanlar Defteri</h3>
-                    <p className="text-xs text-zinc-500">Bu pazara Technocore üzerinden oy veren katılımcılar</p>
+                    <p className="text-xs text-zinc-500">Bu pazara Technocore üzerinden oy veren katılımcılar ({marketCalls.length} Oy)</p>
                   </div>
 
                   <div className="flex gap-1 bg-zinc-950 p-1 rounded-xl border border-zinc-800">
@@ -842,11 +909,11 @@ export default function Home() {
                   {displayedCalls.length > 0 ? (
                     displayedCalls.map((item, idx) => (
                       <div
-                        key={idx}
+                        key={item.nonce || idx}
                         className="p-3 rounded-xl bg-zinc-950/60 border border-zinc-800/80 flex items-center justify-between text-xs font-mono hover:border-zinc-700 transition-all"
                       >
                         <div className="flex items-center gap-3">
-                          <span className="w-5 text-zinc-600 font-semibold text-center">{item.rank || idx + 1}</span>
+                          <span className="w-5 text-zinc-600 font-semibold text-center">{idx + 1}</span>
                           <div className="font-medium text-zinc-300 flex items-center gap-2">
                             {item.did}
                             {item.rawDid === did && (
@@ -868,7 +935,7 @@ export default function Home() {
                           </div>
                           <div className="w-20 text-right font-mono text-[11px] text-zinc-400">
                             <span className="text-zinc-200 font-bold block">{item.multiplier}</span>
-                            <span className="text-[9px] text-zinc-600">tahmin doğruysa</span>
+                            <span className="text-[9px] text-zinc-600">oran</span>
                           </div>
                         </div>
                       </div>
@@ -1014,21 +1081,18 @@ export default function Home() {
         </div>
       )}
 
-      {/* ======================================================== */}
-      {/* 2. SEKME: AJANINA YÜZ VER (AVATAR STUDIO) */}
-      {/* ======================================================== */}
+      {/* 2. SEKME: AJAN YÜZÜ */}
       {activePortalTab === 'avatar' && (
         <section className="w-full max-w-4xl px-4 py-8 space-y-8">
           <div className="p-8 rounded-3xl bg-[#0c0f17] border border-zinc-800 shadow-2xl grid grid-cols-1 md:grid-cols-12 gap-8 items-center relative overflow-hidden">
             <div className="absolute top-0 right-0 w-80 h-80 bg-amber-400/5 rounded-full blur-3xl pointer-events-none" />
 
-            {/* Sol: Avatar Vitrini */}
             <div className="md:col-span-5 flex flex-col items-center justify-center text-center p-6 rounded-2xl bg-zinc-950/80 border border-zinc-800">
               <div className="relative w-44 h-44 mb-4 rounded-3xl bg-gradient-to-tr from-amber-500/10 via-zinc-900 to-zinc-900 border-2 border-amber-400/40 p-3 shadow-2xl flex items-center justify-center">
                 <img
                   src={avatarUrl}
                   alt="Ajan Avatarı"
-                  className="w-full h-full object-contain animate-fade-in"
+                  className="w-full h-full object-contain"
                 />
                 <span className="absolute bottom-2 right-2 w-4 h-4 rounded-full bg-emerald-400 border-2 border-black" />
               </div>
@@ -1036,7 +1100,6 @@ export default function Home() {
               <p className="text-xs text-amber-400 font-mono mt-0.5">Technocore Doğrulanmış Ajan</p>
             </div>
 
-            {/* Sağ: Bilgiler ve Paylaşım */}
             <div className="md:col-span-7 space-y-5">
               <div>
                 <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider block mb-1">
@@ -1048,10 +1111,13 @@ export default function Home() {
                     value={agentName}
                     onChange={(e) => setAgentName(e.target.value)}
                     className="flex-1 p-3 bg-zinc-950 rounded-xl border border-zinc-800 text-sm font-bold text-white focus:outline-none focus:border-amber-400"
-                    placeholder="Ajanınıza bir isim verin..."
+                    placeholder="Ajanınıza isim verin..."
                   />
                   <button
-                    onClick={() => handleSaveAgentName(agentName)}
+                    onClick={() => {
+                      localStorage.setItem('kescobar_agent_name', agentName);
+                      notify('success', `Ajan ismi kaydedildi: ${agentName}`);
+                    }}
                     className="px-4 py-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-xs font-bold text-white"
                   >
                     Kaydet
@@ -1061,41 +1127,37 @@ export default function Home() {
 
               <div className="p-4 rounded-xl bg-zinc-950/60 border border-zinc-800/80 space-y-2 text-xs font-mono">
                 <div className="flex justify-between">
-                  <span className="text-zinc-500">DID Adresi:</span>
+                  <span className="text-zinc-500">DID:</span>
                   <span className="text-amber-300 font-bold truncate max-w-[220px]">{did}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-zinc-500">Şifreleme:</span>
-                  <span className="text-zinc-300">Ed25519 Deterministik</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-zinc-500">Konum / Oda:</span>
+                  <span className="text-zinc-500">Oda:</span>
                   <span className="text-cyan-400">turkce-koprusu</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-zinc-500">Durum:</span>
-                  <span className="text-emerald-400 font-bold">● AĞDA AKTİF</span>
+                  <span className="text-zinc-500">Toplam Oylarınız:</span>
+                  <span className="text-emerald-400 font-bold">{allCalls.filter(c => c.rawDid === did).length} Adet</span>
                 </div>
               </div>
 
               <div className="flex flex-wrap gap-3">
                 <a
                   href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(
-                    `Flop Labs Technocore ekosisteminde otonom ajan kimliğimi oluşturdum! 🤖✨\n\nAjan: ${agentName}\nDID: ${did.slice(0, 16)}...\nTahmin Piyasası & Portalı: https://flop-tahmin-market.vercel.app/\n\n@kriptoescobar0 @flop_labs #FlopLabs #Technocore #Airdrop`
+                    `Flop Labs Technocore ağında otonom ajan kimliğimi mühürledim! 🤖✨\n\nAjan: ${agentName}\nDID: ${did.slice(0, 16)}...\nTahmin Portalı: https://flop-tahmin-market.vercel.app/\n\n@kriptoescobar0 @flop_labs #FlopLabs #Technocore`
                   )}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex-1 py-3 px-4 rounded-xl bg-[#1d9bf0] hover:bg-[#1a8cd8] text-white text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-[#1d9bf0]/20"
+                  className="flex-1 py-3 px-4 rounded-xl bg-[#1d9bf0] hover:bg-[#1a8cd8] text-white text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-md"
                 >
                   <Share2 className="w-4 h-4" />
-                  X'te (Twitter) Rozeti Paylaş
+                  X'te Paylaş
                 </a>
                 <button
                   onClick={handleGenerateNewIdentity}
                   className="py-3 px-4 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 text-xs font-semibold flex items-center gap-2"
                 >
                   <Sparkles className="w-4 h-4 text-amber-400" />
-                  Rastgele Yeni Yüz
+                  Yeni Yüz
                 </button>
               </div>
             </div>
@@ -1103,19 +1165,17 @@ export default function Home() {
         </section>
       )}
 
-      {/* ======================================================== */}
-      {/* 3. SEKME: CANLI AĞ RADARI (NETWORK RADAR) */}
-      {/* ======================================================== */}
+      {/* 3. SEKME: AĞ RADARI */}
       {activePortalTab === 'radar' && (
         <section className="w-full max-w-6xl px-4 py-8 space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-[#0c0f17] border border-zinc-800">
             <div>
               <h3 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                Seen recently on the network (Ağda Son Görülenler)
+                Ağda Son Görülenler (Seen recently on the network)
               </h3>
               <p className="text-xs text-zinc-500 font-mono mt-0.5">
-                Technocore turkce-koprusu odasında kayıtlı son hareketler
+                Technocore turkce-koprusu açık odasındaki canlı mesaj akışı
               </p>
             </div>
             <button
@@ -1127,7 +1187,6 @@ export default function Home() {
             </button>
           </div>
 
-          {/* 3 Sütunlu Kart Izgarası */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {networkLogs.length > 0 ? (
               networkLogs.map((log) => (
@@ -1174,9 +1233,7 @@ export default function Home() {
         </section>
       )}
 
-      {/* ======================================================== */}
-      {/* 4. SEKME: PROTOKOL ŞEFFAFLIĞI ("What it proves & what it doesn't") */}
-      {/* ======================================================== */}
+      {/* 4. SEKME: PROTOKOL ŞEFFAFLIĞI */}
       {activePortalTab === 'proves' && (
         <section className="w-full max-w-5xl px-4 py-8 space-y-6">
           <div className="text-center space-y-2 mb-8">
@@ -1184,80 +1241,51 @@ export default function Home() {
               What it proves, and what it doesn't
             </h2>
             <p className="text-xs md:text-sm text-zinc-400 max-w-xl mx-auto">
-              Merkezi sunucuların bulunmadığı bir sistemde şeffaflık temel esastır. Bu protokolün teknik sınırları ve sunduğu garantiler şunlardır:
+              Merkezi sunucuların bulunmadığı açık protokollerde şeffaflık esastır.
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* YEŞİL KOLON: NEYİ KANITLAR */}
             <div className="p-6 rounded-3xl bg-[#0c0f17] border border-emerald-500/30 shadow-xl space-y-4">
               <div className="flex items-center gap-2 text-emerald-400 font-extrabold text-xs uppercase tracking-wider border-b border-zinc-800/80 pb-3">
                 <CheckCircle2 className="w-4 h-4" />
                 NEYİ KANITLAR? (PROVES)
               </div>
-
               <div className="space-y-4 text-xs leading-relaxed">
                 <div className="p-3.5 rounded-xl bg-zinc-950/60 border border-emerald-500/10 space-y-1">
                   <h4 className="font-bold text-white">1. Anahtar Yerel Olarak Sizdedir</h4>
-                  <p className="text-zinc-400">
-                    Özel anahtarınız (Ed25519 Secret Key) asla tarayıcınızı terk etmez. Hiçbir merkezi sunucuya veya buluta gitmez; tüm imzalar yerel olarak atılır.
-                  </p>
+                  <p className="text-zinc-400">Özel anahtarınız asla tarayıcınızı terk etmez; tüm imzalar cihazınızda yerel olarak atılır.</p>
                 </div>
-
                 <div className="p-3.5 rounded-xl bg-zinc-950/60 border border-emerald-500/10 space-y-1">
-                  <h4 className="font-bold text-white">2. Mesajlar ve Oylar Geri Alınamaz</h4>
-                  <p className="text-zinc-400">
-                    Technocore protokolüne bir kez iletilen tahmin satırı zaman damgası ve sıra numarası (seq) ile kilitlenir. Kimse geçmişteki bir tahmini değiştiremez.
-                  </p>
+                  <h4 className="font-bold text-white">2. Mesajlar Geri Alınamaz</h4>
+                  <p className="text-zinc-400">Technocore defterine yazılan oylar zaman damgası ve benzersiz nonce ile kilitlenir.</p>
                 </div>
-
                 <div className="p-3.5 rounded-xl bg-zinc-950/60 border border-emerald-500/10 space-y-1">
-                  <h4 className="font-bold text-white">3. Merkezi Veritabanı ve Sansür Yoktur</h4>
-                  <p className="text-zinc-400">
-                    Sistemde SQL, Firebase veya şirket veritabanı bulunmaz. Ağ herkesin açıkça okuyabildiği dağıtık Technocore defterine dayanır.
-                  </p>
+                  <h4 className="font-bold text-white">3. Sansürlenemez Açık Mimari</h4>
+                  <p className="text-zinc-400">Geleneksel şirket veritabanı bulunmaz, herkes aynı açık logu doğrular.</p>
                 </div>
               </div>
             </div>
 
-            {/* SARI / AMBER KOLON: NEYİ KANITLAMAZ */}
             <div className="p-6 rounded-3xl bg-[#0c0f17] border border-amber-500/30 shadow-xl space-y-4">
               <div className="flex items-center gap-2 text-amber-400 font-extrabold text-xs uppercase tracking-wider border-b border-zinc-800/80 pb-3">
                 <AlertTriangle className="w-4 h-4" />
                 NEYİ KANITLAMAZ? (DOES NOT PROVE)
               </div>
-
               <div className="space-y-4 text-xs leading-relaxed">
                 <div className="p-3.5 rounded-xl bg-zinc-950/60 border border-amber-500/10 space-y-1">
-                  <h4 className="font-bold text-white">1. Puanlar Gerçek Para veya Token Değildir</h4>
-                  <p className="text-zinc-400">
-                    kESCOBAR puanları simülasyon ve test amaçlıdır (paper trading). Herhangi bir borsada listelenmez veya doğrudan maddi değer taşımaz.
-                  </p>
+                  <h4 className="font-bold text-white">1. Gerçek Maddi Değer Taşımaz</h4>
+                  <p className="text-zinc-400">kESCOBAR test puanlarıdır; simülasyon ve topluluk aktivitesi içindir.</p>
                 </div>
-
                 <div className="p-3.5 rounded-xl bg-zinc-950/60 border border-amber-500/10 space-y-1">
-                  <h4 className="font-bold text-white">2. Sybil (Çoklu Hesap) Koruması Yoktur</h4>
-                  <p className="text-zinc-400">
-                    Protokol izinsiz (permissionless) olduğundan tek bir kişi birden fazla DID anahtarı üretebilir; kimlik doğrulaması (KYC) yapılmaz.
-                  </p>
+                  <h4 className="font-bold text-white">2. KYC veya Kimlik Doğrulaması Yoktur</h4>
+                  <p className="text-zinc-400">Açık kaynaklıdır, isteyen herkes dilediği kadar Ed25519 anahtarı türetebilir.</p>
                 </div>
-
                 <div className="p-3.5 rounded-xl bg-zinc-950/60 border border-amber-500/10 space-y-1">
-                  <h4 className="font-bold text-white">3. Finansal Garanti Taşımaz</h4>
-                  <p className="text-zinc-400">
-                    Tahmin pazarlarının sonuçları Flop Labs ve resmi protokol bildirimlerine göre topluluk hakemliğinde değerlendirilir.
-                  </p>
+                  <h4 className="font-bold text-white">3. Yatırım Tavsiyesi İçermez</h4>
+                  <p className="text-zinc-400">Flop Labs ekosistemindeki gelişmeleri testnet üzerinde simüle eder.</p>
                 </div>
               </div>
-            </div>
-          </div>
-
-          {/* Alt Uyarı Kutusu */}
-          <div className="p-4 rounded-2xl bg-amber-400/5 border border-amber-400/20 flex items-start gap-3 text-xs text-amber-300">
-            <Lock className="w-5 h-5 shrink-0 text-amber-400 mt-0.5" />
-            <div>
-              <span className="font-bold block">Önemli Güvenlik Notu:</span>
-              <span>Tarayıcı çerezlerinizi sıfırladığınızda puanlarınıza ve kimliğinize tekrar erişebilmek için <strong>"Kimliği Güvenle Sakla (.json)"</strong> butonundan yedek dosyanızı mutlaka indirin.</span>
             </div>
           </div>
         </section>
@@ -1265,7 +1293,7 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="w-full max-w-6xl px-4 py-8 border-t border-zinc-800/80 text-center text-xs text-zinc-500 mt-6 font-mono">
-        <p>© 2026 Kripto Escobar • Flop Labs Technocore Web3 Portalı. Açık protokol tabanlıdır.</p>
+        <p>© 2026 Kripto Escobar • Flop Labs Technocore Portalı. Açık protokol tabanlıdır.</p>
         <p className="mt-1 text-[11px]">kESCOBAR testnet puanlarının maddi değeri yoktur.</p>
       </footer>
     </div>
