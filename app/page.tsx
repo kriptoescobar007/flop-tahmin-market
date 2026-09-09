@@ -6,19 +6,15 @@ import {
   CheckCircle2, 
   XCircle, 
   Trophy, 
-  ShieldCheck, 
-  ExternalLink, 
   Coins, 
-  KeyRound, 
-  Terminal, 
-  Activity, 
-  Youtube, 
   Copy, 
   Check, 
   Lock, 
   Sparkles,
-  Layers,
-  ArrowUpRight
+  Terminal,
+  ArrowUpRight,
+  Youtube,
+  Activity
 } from 'lucide-react';
 
 interface VoteRecord {
@@ -42,7 +38,6 @@ export default function Home() {
   const [copiedKey, setCopiedKey] = useState(false);
   const [copiedDid, setCopiedDid] = useState(false);
 
-  // 1. Yerel Kimlik ve Bakiye Başlatma
   useEffect(() => {
     let savedDid = localStorage.getItem('kescobar_did');
     let savedKey = localStorage.getItem('kescobar_key');
@@ -65,13 +60,11 @@ export default function Home() {
     }
 
     setRecentVotes([
-      { marketId: 'flop-mainnet-2027', choice: 'EVET', amount: 500, did: 'did:key:z6Mkq9x...', time: '3 dk önce' },
-      { marketId: 'flop-tge-q4-2026', choice: 'EVET', amount: 1000, did: 'did:key:z6Mtw4a...', time: '7 dk önce' },
-      { marketId: 'btc-ath-150k-2026', choice: 'HAYIR', amount: 250, did: 'did:key:z6Mbb81...', time: '14 dk önce' },
+      { marketId: 'flop-mainnet-2027', choice: 'EVET', amount: 250, did: 'did:key:z6Mkj...', time: 'Az önce' },
+      { marketId: 'flop-tge-q4-2026', choice: 'EVET', amount: 500, did: 'did:key:z6Mtw...', time: '4 dk önce' },
     ]);
   }, []);
 
-  // 2. Yeni Kimlik Üret
   const handleGenerateNewIdentity = () => {
     const newKey = 'ed25519_sk_' + Array.from({length: 32}, () => Math.floor(Math.random()*16).toString(16)).join('');
     const newDid = 'did:key:z6Mk' + Math.random().toString(36).substring(2, 12) + Math.random().toString(36).substring(2, 12);
@@ -79,13 +72,12 @@ export default function Home() {
     setDid(newDid);
     localStorage.setItem('kescobar_key', newKey);
     localStorage.setItem('kescobar_did', newDid);
-    notify('success', 'Yeni Technocore kimliği ve Ed25519 anahtar çifti yerel olarak oluşturuldu.');
+    notify('success', 'Yeni Technocore kimliği yerel olarak oluşturuldu.');
   };
 
-  // 3. Mevcut Anahtarla Giriş Yap
   const handleImportKey = () => {
     if (!inputKey.trim() || inputKey.length < 10) {
-      notify('error', 'Lütfen geçerli bir Ed25519 özel anahtarı girin.');
+      notify('error', 'Geçerli bir anahtar girin.');
       return;
     }
     const derivedDid = 'did:key:z6Mk' + Math.random().toString(36).substring(2, 12) + Math.random().toString(36).substring(2, 12);
@@ -93,15 +85,31 @@ export default function Home() {
     setDid(derivedDid);
     localStorage.setItem('kescobar_key', inputKey.trim());
     localStorage.setItem('kescobar_did', derivedDid);
-    notify('success', 'Mevcut Technocore anahtarınız başarıyla yüklendi.');
+    notify('success', 'Anahtar başarıyla bağlandı.');
   };
 
-  // 4. kESCOBAR Musluğu (Faucet)
-  const handleClaimFaucet = () => {
+  const handleClaimFaucet = async () => {
     const newBal = balance + 1000;
     setBalance(newBal);
     localStorage.setItem('kescobar_balance', newBal.toString());
-    notify('success', '1.000 kESCOBAR testnet bakiyesi kasanıza eklendi!');
+
+    const sender = `esc_${did.replace(/[^a-zA-Z0-9]/g, '').slice(-8)}`;
+    const tapPayload = `call1 ` + JSON.stringify({
+      amount: "1000",
+      from: did,
+      market: "flop-mainnet-2027",
+      nonce: Math.random().toString(16).substring(2, 18),
+      type: "tap"
+    });
+
+    try {
+      await fetch(`https://technocore.chat/r/turkce-koprusu/say/${sender}/${encodeURIComponent(tapPayload)}`, {
+        method: 'GET',
+        mode: 'no-cors'
+      });
+    } catch (_) {}
+
+    notify('success', '1.000 kESCOBAR bakiyeniz tanımlandı ve Technocore ağına işlendi!');
   };
 
   const notify = (type: 'success' | 'info' | 'error', text: string) => {
@@ -120,21 +128,29 @@ export default function Home() {
     }
   };
 
-  // 5. Tahmin Gönderme (Technocore İmzası)
   const handleVote = async (marketId: string, choice: 'EVET' | 'HAYIR') => {
     if (balance < betAmount) {
-      notify('error', 'Yetersiz kESCOBAR bakiyesi! Kasanızdaki musluktan 1.000 kESCOBAR talep edin.');
+      notify('error', 'Yetersiz kESCOBAR bakiyesi! Kasanızdan +1.000 kESCOBAR talep edin.');
       return;
     }
 
     setLoadingId(marketId);
-    notify('info', `İmza Technocore ağına ('flop-tahmin-tr') aktarılıyor...`);
+    notify('info', "Tahmin Technocore 'turkce-koprusu' odasına Ed25519 ile yazılıyor...");
+
+    const sender = `esc_${did.replace(/[^a-zA-Z0-9]/g, '').slice(-8)}`;
+    const votePayload = `call1 ` + JSON.stringify({
+      from: did,
+      market: marketId,
+      nonce: Math.random().toString(16).substring(2, 18),
+      put: betAmount.toString(),
+      side: choice === 'EVET' ? 'yes' : 'no',
+      type: 'call'
+    });
 
     try {
-      await fetch('/api/technocore', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ marketId, choice, amount: betAmount, did }),
+      await fetch(`https://technocore.chat/r/turkce-koprusu/say/${sender}/${encodeURIComponent(votePayload)}`, {
+        method: 'GET',
+        mode: 'no-cors'
       });
 
       const newBal = balance - betAmount;
@@ -142,13 +158,13 @@ export default function Home() {
       localStorage.setItem('kescobar_balance', newBal.toString());
 
       setRecentVotes(prev => [
-        { marketId, choice, amount: betAmount, did: did.slice(0, 14) + '...', time: 'Az önce' },
+        { marketId, choice, amount: betAmount, did: did.slice(0, 14) + '...', time: 'Şimdi' },
         ...prev.slice(0, 4)
       ]);
 
-      notify('success', `Tebrikler! ${betAmount} kESCOBAR "${choice}" tercihiniz Technocore açık loguna işlendi.`);
+      notify('success', `İşlem Başarılı! ${betAmount} kESCOBAR "${choice}" tahmininiz Türkçe Köprüsü odasına kaydedildi.`);
     } catch (e) {
-      notify('error', 'İmza Technocore odasına iletilirken bağlantı hatası oluştu.');
+      notify('error', 'Odaya bağlanırken bir sorun oluştu.');
     } finally {
       setLoadingId(null);
     }
@@ -156,11 +172,11 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-[#0b0e14] text-zinc-100 flex flex-col items-center selection:bg-amber-500 selection:text-black">
-      {/* Üst Menü */}
+      {/* Header */}
       <header className="w-full border-b border-zinc-800/80 bg-[#0f1219]/90 backdrop-blur sticky top-0 z-40">
         <div className="max-w-6xl mx-auto px-4 py-3.5 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-amber-400 border border-amber-300/40 flex items-center justify-center font-black text-black text-xl shadow-lg shadow-amber-500/20">
+            <div className="h-10 w-10 rounded-xl bg-amber-400 flex items-center justify-center font-black text-black text-xl shadow-lg shadow-amber-500/20">
               E
             </div>
             <div>
@@ -176,7 +192,7 @@ export default function Home() {
           <div className="flex items-center gap-2.5">
             <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-medium text-emerald-400">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              Canlı Technocore Relay Aktif
+              Technocore Canlı Relay Aktif
             </div>
             <a
               href="https://youtube.com/@kriptoescobar0"
@@ -187,19 +203,11 @@ export default function Home() {
               <Youtube className="w-3.5 h-3.5" />
               YouTube
             </a>
-            <a
-              href="https://twitter.com/kriptoescobar0"
-              target="_blank"
-              rel="noreferrer"
-              className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-medium transition-all border border-zinc-700"
-            >
-              @kriptoescobar0
-            </a>
           </div>
         </div>
       </header>
 
-      {/* Hero Başlık Alanı */}
+      {/* Hero */}
       <section className="w-full max-w-6xl px-4 pt-10 pb-6">
         <div className="text-[11px] font-mono tracking-wider uppercase text-amber-400 font-bold mb-2 flex items-center gap-2">
           <span>KRİPTOESCOBAR</span>
@@ -215,31 +223,13 @@ export default function Home() {
           </span>
         </h1>
         <p className="text-xs md:text-sm text-zinc-400 max-w-2xl leading-relaxed">
-          Tarayıcınızda yerel Ed25519 anahtarınızla kESCOBAR puanlarını kullanarak Flop Labs ve kripto piyasası gelişmelerini öngörün. Veritabanı ve sunucu bulunmaz; tüm oylar doğrudan Technocore odasına şifreli mesaj olarak kaydedilir.
+          Tarayıcınızda kESCOBAR test puanlarıyla tahmin yapın. Veritabanı ve sunucu bulunmaz; tüm oylar Technocore <code>turkce-koprusu</code> açık odasına şifreli mesaj olarak kaydedilir.
         </p>
-
-        {/* Aşama / Sekme Butonları */}
-        <div className="flex flex-wrap items-center gap-2 mt-6 pt-4 border-t border-zinc-800/80">
-          <span className="px-3 py-1 rounded-md bg-zinc-900 border border-amber-500/30 text-amber-300 text-[11px] font-bold flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5" /> 1. KİMLİK / YÜKLE
-          </span>
-          <span className="px-3 py-1 rounded-md bg-zinc-900/60 text-zinc-400 text-[11px] font-medium border border-zinc-800">
-            2. MUSLUK (kESCOBAR)
-          </span>
-          <span className="px-3 py-1 rounded-md bg-zinc-900/60 text-zinc-400 text-[11px] font-medium border border-zinc-800">
-            3. TAHMİN YAP
-          </span>
-          <span className="px-3 py-1 rounded-md bg-zinc-900/60 text-zinc-400 text-[11px] font-medium border border-zinc-800">
-            4. İMZALA & ONAYLA
-          </span>
-        </div>
       </section>
 
-      {/* Ana Çift Kolonlu Gövde */}
+      {/* Ana Gövde */}
       <main className="w-full max-w-6xl px-4 py-6 grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Sol Kolon (İçerik & Pazarlar - 2 Kolon) */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Bildirim Kutusu */}
           {statusNotice && (
             <div className={`p-4 rounded-xl border text-xs font-semibold flex items-center gap-2.5 transition-all ${
               statusNotice.type === 'success' 
@@ -253,17 +243,16 @@ export default function Home() {
             </div>
           )}
 
-          {/* 1. Modül: Technocore DID Kimliği Belirle */}
+          {/* Kimlik Modülü */}
           <div className="p-6 rounded-2xl bg-[#0f1219] border border-zinc-800 shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-bold text-white flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
                 Technocore DID Kimliği Belirle
               </h2>
-              <span className="text-[11px] text-zinc-500 font-mono">Ed25519 Şifreleme</span>
+              <span className="text-[11px] text-zinc-500 font-mono">Ed25519</span>
             </div>
 
-            {/* Giriş Tipi Seçimi */}
             <div className="grid grid-cols-2 gap-2 mb-4">
               <button
                 onClick={() => setAuthTab('create')}
@@ -289,9 +278,6 @@ export default function Home() {
 
             {authTab === 'create' ? (
               <div className="space-y-3">
-                <p className="text-xs text-zinc-400 leading-relaxed">
-                  Tarayıcınız yerel hafızasında sizin için güvenli bir Technocore kimliği tanımladı. Dilediğiniz an tek tıkla sıfırlayabilirsiniz.
-                </p>
                 <div className="p-3 bg-[#080a0f] rounded-xl border border-zinc-800 flex items-center justify-between gap-2">
                   <div className="truncate font-mono text-xs text-amber-300">
                     <span className="text-zinc-500">DID: </span>{did}
@@ -312,9 +298,6 @@ export default function Home() {
               </div>
             ) : (
               <div className="space-y-3">
-                <p className="text-xs text-zinc-400">
-                  Önceden oluşturduğunuz Technocore Ed25519 Özel Anahtarınızı (Private Key) buraya yapıştırın:
-                </p>
                 <input
                   type="password"
                   placeholder="ed25519_sk_..."
@@ -324,7 +307,7 @@ export default function Home() {
                 />
                 <button
                   onClick={handleImportKey}
-                  className="w-full py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-black text-xs font-bold transition-all shadow-md shadow-amber-400/20"
+                  className="w-full py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-black text-xs font-bold transition-all"
                 >
                   Anahtarı Doğrula ve Bağlan
                 </button>
@@ -332,11 +315,11 @@ export default function Home() {
             )}
           </div>
 
-          {/* 2. Modül: Puan Seçimi & Tahmin Havuzu */}
+          {/* Bahis Miktarı Seçimi */}
           <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-[#0f1219] border border-zinc-800">
             <div>
-              <span className="text-xs font-bold text-white">Oy Başına Yatırım Miktarı:</span>
-              <p className="text-[11px] text-zinc-500">Her tahminde havuzunuza eklenecek kESCOBAR miktarı</p>
+              <span className="text-xs font-bold text-white">Oy Başına Yatırım:</span>
+              <p className="text-[11px] text-zinc-500">Tahminde kullanılacak kESCOBAR miktarı</p>
             </div>
             <div className="flex gap-1.5">
               {[100, 250, 500, 1000].map(amt => (
@@ -355,7 +338,7 @@ export default function Home() {
             </div>
           </div>
 
-          {/* 3. Modül: Tahmin Kartları (5 Pazar) */}
+          {/* Tahmin Kartları */}
           <div className="space-y-4">
             {MARKETS.map((market) => {
               const total = market.initialYes + market.initialNo;
@@ -384,15 +367,10 @@ export default function Home() {
                     {market.description}
                   </p>
 
-                  {/* Oran Barı */}
                   <div className="space-y-1.5 mb-4">
                     <div className="flex justify-between text-xs font-bold">
-                      <span className="text-emerald-400 flex items-center gap-1">
-                        EVET %{yesPercent} ({market.initialYes.toLocaleString()} kESCOBAR)
-                      </span>
-                      <span className="text-rose-400 flex items-center gap-1">
-                        HAYIR %{noPercent} ({market.initialNo.toLocaleString()} kESCOBAR)
-                      </span>
+                      <span className="text-emerald-400">EVET %{yesPercent} ({market.initialYes.toLocaleString()} kESCOBAR)</span>
+                      <span className="text-rose-400">HAYIR %{noPercent} ({market.initialNo.toLocaleString()} kESCOBAR)</span>
                     </div>
                     <div className="h-2.5 w-full rounded-full bg-zinc-950 overflow-hidden flex border border-zinc-800">
                       <div style={{ width: `${yesPercent}%` }} className="bg-emerald-500 transition-all duration-500" />
@@ -400,7 +378,6 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* Oy Butonları */}
                   <div className="grid grid-cols-2 gap-3">
                     <button
                       disabled={isVoting}
@@ -425,12 +402,9 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Sağ Kolon (Kasanız / Your Vault & Topluluk Panelleri) */}
+        {/* Sağ Kolon */}
         <div className="space-y-6">
-          {/* KASANIZ (YOUR VAULT) */}
-          <div className="p-6 rounded-2xl bg-[#0f1219] border border-amber-500/30 shadow-xl relative overflow-hidden">
-            <div className="absolute -right-8 -bottom-8 w-28 h-28 bg-amber-500/5 rounded-full blur-2xl pointer-events-none" />
-
+          <div className="p-6 rounded-2xl bg-[#0f1219] border border-amber-500/30 shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xs uppercase font-black tracking-widest text-zinc-400 flex items-center gap-1.5">
                 <Lock className="w-3.5 h-3.5 text-amber-400" />
@@ -441,7 +415,6 @@ export default function Home() {
               </span>
             </div>
 
-            {/* Bakiye Göstergesi */}
             <div className="p-4 rounded-xl bg-[#080a0f] border border-zinc-800/80 mb-4">
               <span className="text-[11px] text-zinc-500 block mb-1">Mevcut Bakiyeniz</span>
               <div className="text-2xl font-black text-amber-400 flex items-baseline gap-1.5">
@@ -450,7 +423,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Musluk Butonu */}
             <button
               onClick={handleClaimFaucet}
               className="w-full py-3 mb-4 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-black font-extrabold text-xs flex items-center justify-center gap-2 transition-all shadow-lg shadow-amber-500/20 active:scale-95"
@@ -459,7 +431,6 @@ export default function Home() {
               +1.000 kESCOBAR Talep Et (Musluk)
             </button>
 
-            {/* Anahtar Detayı */}
             <div className="space-y-2 pt-2 border-t border-zinc-800/80 text-[11px]">
               <div>
                 <span className="text-zinc-500 block">Ed25519 Özel Anahtar Kesiti:</span>
@@ -473,7 +444,7 @@ export default function Home() {
             </div>
           </div>
 
-          {/* YouTube Kanal Kartı */}
+          {/* YouTube Kanalı */}
           <div className="p-5 rounded-2xl bg-[#0f1219] border border-zinc-800 text-center space-y-3">
             <h3 className="text-xs font-bold text-zinc-300">Kripto Escobar Topluluğu</h3>
             <p className="text-[11px] text-zinc-500 leading-relaxed">
@@ -490,48 +461,33 @@ export default function Home() {
             </a>
           </div>
 
-          {/* Technocore Canlı Denetim Defteri */}
+          {/* Technocore Canlı Odası */}
           <div className="p-5 rounded-2xl bg-[#0f1219] border border-zinc-800">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
                 <Terminal className="w-3.5 h-3.5 text-amber-400" />
-                Technocore Son İmzalar
+                Technocore Odası
               </h3>
-              <span className="text-[10px] text-zinc-500 font-mono">flop-tahmin-tr</span>
+              <span className="text-[10px] text-zinc-500 font-mono">turkce-koprusu</span>
             </div>
-            <div className="space-y-2">
-              {recentVotes.map((v, i) => (
-                <div key={i} className="p-2.5 rounded-xl bg-[#080a0f] border border-zinc-800/80 text-[11px] font-mono">
-                  <div className="flex justify-between items-center text-zinc-500 text-[10px] mb-1">
-                    <span>{v.did}</span>
-                    <span>{v.time}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-zinc-300 truncate max-w-[130px]">{v.marketId}</span>
-                    <span className={`font-bold ${v.choice === 'EVET' ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      {v.choice} ({v.amount} kESCOBAR)
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-
+            <p className="text-xs text-zinc-400 mb-4 leading-relaxed">
+              Verdiğiniz tüm oylar Technocore <code>turkce-koprusu</code> açık defterinde şeffafça saklanır.
+            </p>
             <a
-              href="https://technocore.chat/r/flop-tahmin-tr"
+              href="https://technocore.chat/r/turkce-koprusu"
               target="_blank"
               rel="noreferrer"
-              className="mt-3 w-full py-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-[11px] font-medium flex items-center justify-center gap-1.5 transition-all border border-zinc-800"
+              className="w-full py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-amber-400 text-xs font-bold flex items-center justify-center gap-1.5 transition-all border border-zinc-800 shadow-md"
             >
-              Oda Kayıtlarını Aç <ArrowUpRight className="w-3 h-3" />
+              Oda Kayıtlarını Aç <ArrowUpRight className="w-3.5 h-3.5" />
             </a>
           </div>
         </div>
       </main>
 
-      {/* Alt Bilgi (Footer) */}
       <footer className="w-full max-w-6xl px-4 py-8 border-t border-zinc-800/80 text-center text-xs text-zinc-500 mt-12">
         <p>© 2026 Kripto Escobar • Flop Labs Technocore Tahmin Piyasası. Tüm hakları saklıdır.</p>
-        <p className="mt-1 text-[11px]">kESCOBAR testnet puanlarının maddi değeri yoktur. Katkılar Ed25519 açık odasında şifrelenir.</p>
+        <p className="mt-1 text-[11px]">kESCOBAR testnet puanlarının maddi değeri yoktur. Oylar Technocore protokolü üzerinde imzalanır.</p>
       </footer>
     </div>
   );
