@@ -54,7 +54,6 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const activeMarket = MARKETS.find(m => m.id === selectedMarketId) || MARKETS[0];
 
-  // 1. Kimlik ve Cüzdan Başlatma
   useEffect(() => {
     let savedDid = localStorage.getItem('kescobar_did');
     let savedKey = localStorage.getItem('kescobar_key');
@@ -75,7 +74,6 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [selectedMarketId]);
 
-  // 2. Technocore Odasından Veri Çekme
   const fetchTechnocoreLogs = async () => {
     setIsLoadingLogs(true);
     try {
@@ -94,7 +92,7 @@ export default function Home() {
         parseRoomData(rawText);
       }
     } catch (e) {
-      console.error('Log çekme hatası:', e);
+      console.error('Log hatası:', e);
     } finally {
       setIsLoadingLogs(false);
     }
@@ -160,7 +158,6 @@ export default function Home() {
     setParsedCalls(sorted);
   };
 
-  // Metrik Hesaplamaları
   const totalMarketPool = parsedCalls.reduce((acc, c) => acc + c.amount, activeMarket.initialYes + activeMarket.initialNo);
   const yesPool = parsedCalls.filter(c => c.side === 'yes').reduce((acc, c) => acc + c.amount, activeMarket.initialYes);
   const noPool = totalMarketPool - yesPool;
@@ -170,7 +167,6 @@ export default function Home() {
   const noMultiplier = (totalMarketPool / noPool).toFixed(2);
   const totalParticipants = parsedCalls.length + 43;
 
-  // Yeni Kimlik
   const handleGenerateNewIdentity = () => {
     const newKey = 'ed25519_sk_' + Array.from({length: 32}, () => Math.floor(Math.random()*16).toString(16)).join('');
     const newDid = 'did:key:z6Mk' + Math.random().toString(36).substring(2, 12) + Math.random().toString(36).substring(2, 12);
@@ -178,13 +174,12 @@ export default function Home() {
     setDid(newDid);
     localStorage.setItem('kescobar_key', newKey);
     localStorage.setItem('kescobar_did', newDid);
-    notify('success', 'Yeni Technocore kimliği yerel olarak oluşturuldu.');
+    notify('success', 'Yeni Technocore kimliği oluşturuldu.');
   };
 
-  // Anahtar Yükle
   const handleImportKey = () => {
     if (!inputKey.trim() || inputKey.length < 10) {
-      notify('error', 'Lütfen geçerli bir Ed25519 özel anahtarı girin.');
+      notify('error', 'Geçerli bir Ed25519 anahtarı girin.');
       return;
     }
     const derivedDid = 'did:key:z6Mk' + Math.random().toString(36).substring(2, 12) + Math.random().toString(36).substring(2, 12);
@@ -192,10 +187,9 @@ export default function Home() {
     setDid(derivedDid);
     localStorage.setItem('kescobar_key', inputKey.trim());
     localStorage.setItem('kescobar_did', derivedDid);
-    notify('success', 'Technocore kimliği başarıyla yüklendi!');
+    notify('success', 'Kimlik başarıyla yüklendi!');
   };
 
-  // JSON Dosyası Yükle
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -213,7 +207,7 @@ export default function Home() {
             setBalance(json.balance);
             localStorage.setItem('kescobar_balance', json.balance.toString());
           }
-          notify('success', 'Yedek JSON kimlik dosyası başarıyla yüklendi.');
+          notify('success', 'Yedek JSON kimlik dosyası yüklendi.');
         } else {
           notify('error', 'Geçersiz kimlik dosyası.');
         }
@@ -224,7 +218,6 @@ export default function Home() {
     reader.readAsText(file);
   };
 
-  // JSON Dosyası İndir
   const handleDownloadBackup = () => {
     const backupData = {
       app: 'KriptoEscobar Flop Technocore Tahmin Piyasası',
@@ -245,7 +238,6 @@ export default function Home() {
     notify('success', 'Kimlik yedek dosyanız (.json) indirildi.');
   };
 
-  // Musluk (Faucet)
   const handleClaim = async () => {
     const newBal = balance + 1000;
     setBalance(newBal);
@@ -267,13 +259,12 @@ export default function Home() {
       });
     } catch (_) {}
 
-    notify('success', '1.000 kESCOBAR cüzdanınıza tanımlandı!');
+    notify('success', '1.000 kESCOBAR bakiyeniz tanımlandı!');
   };
 
-  // Tahmin Gönder
   const handlePlaceCall = async () => {
     if (balance < betAmount) {
-      notify('error', 'Yetersiz kESCOBAR! Sağdaki panelden 1.000 kESCOBAR talep edin.');
+      notify('error', 'Yetersiz bakiye! Sağdaki panelden 1.000 kESCOBAR talep edin.');
       return;
     }
 
@@ -300,10 +291,10 @@ export default function Home() {
       setBalance(newBal);
       localStorage.setItem('kescobar_balance', newBal.toString());
 
-      notify('success', `Tebrikler! ${betAmount} kESCOBAR "${selectedSide === 'yes' ? 'EVET' : 'HAYIR'}" tahmininiz açık odaya kaydedildi.`);
+      notify('success', `Tebrikler! ${betAmount} kESCOBAR "${selectedSide === 'yes' ? 'EVET' : 'HAYIR'}" tercihiniz kaydedildi.`);
       setTimeout(fetchTechnocoreLogs, 1500);
     } catch (e) {
-      notify('error', 'Odaya bağlanırken hata oluştu.');
+      notify('error', 'Bağlantı hatası oluştu.');
     } finally {
       setIsSubmitting(false);
     }
@@ -330,40 +321,39 @@ export default function Home() {
     : [...parsedCalls].reverse().slice(0, 10);
 
   return (
-    <div className="min-h-screen bg-[#07090e] text-zinc-100 flex flex-col items-center selection:bg-amber-400 selection:text-black">
-      {/* Üst Menü (Gerçek Kripto Escobar Logolu) */}
+    <div className="min-h-screen bg-[#07090e] text-zinc-100 flex flex-col items-center">
+      {/* Üst Menü */}
       <header className="w-full border-b border-zinc-800/80 bg-[#0d1017]/90 backdrop-blur sticky top-0 z-40">
         <div className="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            {/* Altın Çerçeveli Orijinal Logo */}
             <img
               src="https://github.com/kriptoescobar007.png"
               alt="Kripto Escobar"
-              className="h-10 w-10 rounded-full border-2 border-amber-400/80 shadow-lg shadow-amber-500/25 object-cover shrink-0"
+              className="h-10 w-10 rounded-full border-2 border-amber-400/80 shadow-md shadow-amber-500/20 object-cover shrink-0"
             />
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-extrabold text-sm tracking-tight text-white">KriptoEscobar</span>
+                <span className="font-bold text-sm tracking-tight text-white">KriptoEscobar</span>
                 <span className="text-[11px] text-zinc-500">|</span>
                 <span className="text-xs font-semibold text-zinc-300">Flop Labs Technocore Tahmin Piyasası</span>
               </div>
-              <p className="text-[11px] text-zinc-500 font-mono">Merkeziyetsiz Tahmin Protokolü</p>
+              <p className="text-[11px] text-zinc-500 font-mono tracking-normal">Merkeziyetsiz Tahmin Protokolü</p>
             </div>
           </div>
 
           <div className="flex items-center gap-2.5">
             <button 
               onClick={fetchTechnocoreLogs}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-[11px] text-zinc-400 hover:text-white transition-all"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-xs font-medium text-zinc-400 hover:text-white transition-all"
             >
-              <RefreshCw className={`w-3 h-3 ${isLoadingLogs ? 'animate-spin text-amber-400' : ''}`} />
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingLogs ? 'animate-spin text-amber-400' : ''}`} />
               Canlı Logları Tara
             </button>
             <a
               href="https://youtube.com/@kriptoescobar0"
               target="_blank"
               rel="noreferrer"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all shadow-md shadow-red-600/20"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all shadow-sm"
             >
               <Youtube className="w-3.5 h-3.5" />
               YouTube
@@ -372,8 +362,8 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Hero Alanı */}
-      <section className="w-full max-w-6xl px-4 pt-8 pb-4">
+      {/* Hero Alanı (İlk Sitenin Birebir Tipografisi) */}
+      <section className="w-full max-w-6xl px-4 pt-10 pb-4">
         <div className="text-[11px] font-mono tracking-wider uppercase text-amber-400 font-bold mb-2 flex items-center gap-2">
           <span>KRİPTOESCOBAR</span>
           <span className="text-zinc-600">&gt;</span>
@@ -381,34 +371,34 @@ export default function Home() {
           <span className="text-zinc-600">&gt;</span>
           <span>TAHMİN PİYASASI</span>
         </div>
-        <h1 className="text-3xl md:text-5xl font-black tracking-tight text-white mb-2">
+        <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight text-white mb-3 leading-[1.1]">
           Piyasayı öngör.<br />
-          <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-amber-200">
+          <span className="text-amber-400">
             Tahminini imzala.
           </span>
         </h1>
-        <p className="text-xs md:text-sm text-zinc-400 max-w-2xl leading-relaxed">
+        <p className="text-sm text-zinc-400 max-w-2xl leading-relaxed">
           Tarayıcınızda yerel Ed25519 anahtarınızla kESCOBAR puanlarıyla piyasa gelişmelerini öngörün. Veritabanı ve sunucu bulunmaz; tüm oylar Technocore <code>turkce-koprusu</code> açık odasında tutulur.
         </p>
       </section>
 
-      {/* 1. KATMAN: KAPSAMLI KİMLİK & GİRİŞ MODÜLÜ */}
+      {/* 1. KATMAN: KİMLİK & GİRİŞ */}
       <section className="w-full max-w-6xl px-4 mb-8">
-        <div className="p-6 rounded-3xl bg-[#0c0f17] border border-zinc-800 shadow-2xl space-y-4">
+        <div className="p-6 rounded-2xl bg-[#0c0f17] border border-zinc-800 shadow-xl space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800/80 pb-3">
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
               <h2 className="text-sm font-bold text-white tracking-wide">Technocore DID Kimliği Belirle</h2>
             </div>
-            <span className="text-[11px] text-zinc-500 font-mono">Ed25519 Kriptografik İmza</span>
+            <span className="text-xs text-zinc-500 font-mono">Ed25519 Kriptografik İmza</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
             <button
               onClick={() => setAuthTab('create')}
-              className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+              className={`py-2 px-3 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-2 ${
                 authTab === 'create'
-                  ? 'bg-amber-400 text-black shadow-md shadow-amber-400/20'
+                  ? 'bg-amber-400 text-black font-bold shadow-md shadow-amber-400/20'
                   : 'bg-zinc-950 text-zinc-400 hover:text-white border border-zinc-800'
               }`}
             >
@@ -417,9 +407,9 @@ export default function Home() {
             </button>
             <button
               onClick={() => setAuthTab('import')}
-              className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+              className={`py-2 px-3 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-2 ${
                 authTab === 'import'
-                  ? 'bg-amber-400 text-black shadow-md shadow-amber-400/20'
+                  ? 'bg-amber-400 text-black font-bold shadow-md shadow-amber-400/20'
                   : 'bg-zinc-950 text-zinc-400 hover:text-white border border-zinc-800'
               }`}
             >
@@ -428,9 +418,9 @@ export default function Home() {
             </button>
             <button
               onClick={() => setAuthTab('backup')}
-              className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+              className={`py-2 px-3 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-2 ${
                 authTab === 'backup'
-                  ? 'bg-amber-400 text-black shadow-md shadow-amber-400/20'
+                  ? 'bg-amber-400 text-black font-bold shadow-md shadow-amber-400/20'
                   : 'bg-zinc-950 text-zinc-400 hover:text-white border border-zinc-800'
               }`}
             >
@@ -440,7 +430,7 @@ export default function Home() {
           </div>
 
           {authTab === 'create' && (
-            <div className="p-4 rounded-2xl bg-zinc-950/70 border border-zinc-800/80 space-y-3">
+            <div className="p-4 rounded-xl bg-zinc-950/70 border border-zinc-800/80 space-y-3">
               <p className="text-xs text-zinc-400 leading-relaxed">
                 Tarayıcınız yerel hafızasında sizin için güvenli bir Technocore kimliği tanımladı. Dilediğiniz an tek tıkla sıfırlayabilirsiniz.
               </p>
@@ -450,7 +440,7 @@ export default function Home() {
                 </div>
                 <button
                   onClick={() => copyToClipboard(did, 'did')}
-                  className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs flex items-center gap-1.5 shrink-0"
+                  className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-medium flex items-center gap-1.5 shrink-0"
                 >
                   {copiedDid ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                   Kopyala
@@ -458,7 +448,7 @@ export default function Home() {
               </div>
               <button
                 onClick={handleGenerateNewIdentity}
-                className="w-full py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-bold border border-zinc-800 transition-all"
+                className="w-full py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-semibold border border-zinc-800 transition-all"
               >
                 Farklı Bir Kimlik Oluştur
               </button>
@@ -466,9 +456,9 @@ export default function Home() {
           )}
 
           {authTab === 'import' && (
-            <div className="p-4 rounded-2xl bg-zinc-950/70 border border-zinc-800/80 space-y-4">
+            <div className="p-4 rounded-xl bg-zinc-950/70 border border-zinc-800/80 space-y-4">
               <div>
-                <span className="text-xs font-bold text-white block mb-1">A. JSON Yedek Dosyası ile Giriş:</span>
+                <span className="text-xs font-semibold text-white block mb-1">A. JSON Yedek Dosyası ile Giriş:</span>
                 <p className="text-xs text-zinc-400 mb-2">Daha önce indirdiğiniz kimlik dosyasını yükleyin:</p>
                 <input
                   type="file"
@@ -479,7 +469,7 @@ export default function Home() {
                 />
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="py-2.5 px-4 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs font-bold flex items-center gap-2 transition-all"
+                  className="py-2.5 px-4 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs font-semibold flex items-center gap-2 transition-all"
                 >
                   <Upload className="w-4 h-4 text-amber-400" />
                   Kimlik Dosyası Seç (.json)
@@ -489,7 +479,7 @@ export default function Home() {
               <div className="h-px bg-zinc-800" />
 
               <div>
-                <span className="text-xs font-bold text-white block mb-1">B. Özel Anahtarınızı (Private Key) Manuel Girin:</span>
+                <span className="text-xs font-semibold text-white block mb-1">B. Özel Anahtarınızı (Private Key) Manuel Girin:</span>
                 <div className="flex gap-2">
                   <input
                     type="password"
@@ -510,7 +500,7 @@ export default function Home() {
           )}
 
           {authTab === 'backup' && (
-            <div className="p-4 rounded-2xl bg-zinc-950/70 border border-zinc-800/80 space-y-3">
+            <div className="p-4 rounded-xl bg-zinc-950/70 border border-zinc-800/80 space-y-3">
               <p className="text-xs text-zinc-400 leading-relaxed">
                 Tarayıcı geçmişinizi temizlediğinizde puanlarınızı ve kimliğinizi kaybetmemek için kimlik dosyanızı bilgisayarınıza indirin.
               </p>
@@ -520,7 +510,7 @@ export default function Home() {
                 </div>
                 <button
                   onClick={() => copyToClipboard(privateKey, 'key')}
-                  className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs flex items-center gap-1.5 shrink-0"
+                  className="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-medium flex items-center gap-1.5 shrink-0"
                 >
                   {copiedKey ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                   Kopyala
@@ -528,7 +518,7 @@ export default function Home() {
               </div>
               <button
                 onClick={handleDownloadBackup}
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-black text-xs font-black transition-all shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2"
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-black text-xs font-bold transition-all shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2"
               >
                 <Download className="w-4 h-4" />
                 Kimlik Dosyasını İndir (.json)
@@ -541,7 +531,7 @@ export default function Home() {
       {/* 2. KATMAN: 5 PAZAR SEÇİCİ */}
       <section className="w-full max-w-6xl px-4 mb-8">
         <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2 text-xs font-bold text-zinc-300">
+          <div className="flex items-center gap-2 text-xs font-semibold text-zinc-300">
             <Layers className="w-4 h-4 text-amber-400" />
             <span>Aktif Tahmin Pazarları (5 Adet)</span>
           </div>
@@ -555,19 +545,19 @@ export default function Home() {
               <button
                 key={m.id}
                 onClick={() => setSelectedMarketId(m.id)}
-                className={`p-4 rounded-2xl text-left transition-all border flex flex-col justify-between relative group ${
+                className={`p-4 rounded-xl text-left transition-all border flex flex-col justify-between relative group ${
                   isSelected
-                    ? 'bg-zinc-900 border-amber-400 shadow-xl shadow-amber-400/10 -translate-y-0.5'
+                    ? 'bg-zinc-900 border-amber-400 shadow-lg shadow-amber-400/10 -translate-y-0.5'
                     : 'bg-[#0c0f17] border-zinc-800/80 hover:border-zinc-700'
                 }`}
               >
                 {isSelected && (
-                  <span className="absolute -top-2 right-3 px-2 py-0.5 rounded-full bg-amber-400 text-black font-black text-[9px] uppercase tracking-wider">
+                  <span className="absolute -top-2 right-3 px-2 py-0.5 rounded-full bg-amber-400 text-black font-extrabold text-[9px] uppercase tracking-wider">
                     Seçili
                   </span>
                 )}
                 <div>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md inline-block mb-2 border ${
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md inline-block mb-2 border ${
                     isSelected 
                       ? 'bg-amber-400/10 text-amber-300 border-amber-400/30' 
                       : 'bg-zinc-950 text-zinc-400 border-zinc-800'
@@ -583,7 +573,7 @@ export default function Home() {
 
                 <div className="mt-3 pt-2 border-t border-zinc-800/60 flex items-center justify-between text-[10px] text-zinc-500 font-mono">
                   <span>Vade:</span>
-                  <span className="text-zinc-400 font-bold">{m.endDate.replace(' 2026', '').replace(' 2027', '')}</span>
+                  <span className="text-zinc-400 font-medium">{m.endDate.replace(' 2026', '').replace(' 2027', '')}</span>
                 </div>
               </button>
             );
@@ -594,7 +584,7 @@ export default function Home() {
       {/* Bildirim Alanı */}
       {statusNotice && (
         <div className="w-full max-w-6xl px-4 mb-4">
-          <div className={`p-3.5 rounded-xl border text-xs font-semibold flex items-center gap-2.5 shadow-lg ${
+          <div className={`p-3.5 rounded-xl border text-xs font-medium flex items-center gap-2.5 shadow-lg ${
             statusNotice.type === 'success' 
               ? 'bg-emerald-950/50 border-emerald-500/40 text-emerald-300' 
               : statusNotice.type === 'error'
@@ -612,20 +602,20 @@ export default function Home() {
         
         {/* SOL BÖLÜM: Vitrin & İstatistikler */}
         <div className="lg:col-span-8 space-y-6">
-          <h2 className="text-2xl md:text-3xl font-black text-white leading-tight">
+          <h2 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight leading-tight">
             {activeMarket.title}
           </h2>
 
-          <div className="p-6 rounded-3xl bg-[#0c0f17] border border-zinc-800/90 grid grid-cols-1 md:grid-cols-12 gap-6 items-center shadow-2xl relative overflow-hidden">
+          <div className="p-6 rounded-2xl bg-[#0c0f17] border border-zinc-800/90 grid grid-cols-1 md:grid-cols-12 gap-6 items-center shadow-xl relative overflow-hidden">
             <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
 
             {/* EVET Kutusu */}
-            <div className="md:col-span-4 p-4 rounded-2xl bg-zinc-950/70 border border-zinc-800/80">
+            <div className="md:col-span-4 p-4 rounded-xl bg-zinc-950/70 border border-zinc-800/80">
               <div className="flex items-center gap-2 text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2">
                 <span className="w-2.5 h-2.5 rounded-sm bg-emerald-400" />
                 EVET (GERÇEKLEŞİR)
               </div>
-              <div className="text-2xl md:text-3xl font-black text-white tracking-tight">
+              <div className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
                 {yesPool.toLocaleString()} <span className="text-xs font-bold text-zinc-500 font-mono">kESCOBAR</span>
               </div>
               <p className="text-[11px] text-zinc-400 mt-1 font-mono">
@@ -634,12 +624,12 @@ export default function Home() {
             </div>
 
             {/* HAYIR Kutusu */}
-            <div className="md:col-span-4 p-4 rounded-2xl bg-zinc-950/70 border border-zinc-800/80">
+            <div className="md:col-span-4 p-4 rounded-xl bg-zinc-950/70 border border-zinc-800/80">
               <div className="flex items-center gap-2 text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2">
                 <span className="w-2.5 h-2.5 rounded-sm bg-rose-400" />
                 HAYIR (GECİKİR / İPTAL)
               </div>
-              <div className="text-2xl md:text-3xl font-black text-white tracking-tight">
+              <div className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
                 {noPool.toLocaleString()} <span className="text-xs font-bold text-zinc-500 font-mono">kESCOBAR</span>
               </div>
               <p className="text-[11px] text-zinc-400 mt-1 font-mono">
@@ -666,8 +656,8 @@ export default function Home() {
                   />
                 </svg>
                 <div className="absolute flex flex-col items-center justify-center">
-                  <span className="text-3xl font-black text-white">{yesPercent}%</span>
-                  <span className="text-[9px] uppercase tracking-wider text-emerald-400 font-extrabold">EVET DİYOR</span>
+                  <span className="text-3xl font-extrabold text-white tracking-tight">{yesPercent}%</span>
+                  <span className="text-[9px] uppercase tracking-wider text-emerald-400 font-bold">EVET DİYOR</span>
                 </div>
               </div>
               <span className="text-[11px] text-zinc-400 mt-2 font-mono">%{noPercent} ihtimal vermiyor</span>
@@ -679,26 +669,26 @@ export default function Home() {
               <Lock className="w-4 h-4 text-amber-400 shrink-0" />
               <div>
                 <span className="font-bold text-white block text-[11px]">HER TAHMİN İMZALI</span>
-                <span className="text-[10px] text-zinc-500">Ed25519 yerel anahtar</span>
+                <span className="text-[10px] text-zinc-500 font-mono">Ed25519 yerel anahtar</span>
               </div>
             </div>
             <div className="p-3 rounded-xl bg-[#0c0f17] border border-zinc-800/60 flex items-center gap-3">
               <Activity className="w-4 h-4 text-cyan-400 shrink-0" />
               <div>
                 <span className="font-bold text-white block text-[11px]">TECHNOCORE AĞI</span>
-                <span className="text-[10px] text-zinc-500">turkce-koprusu odası</span>
+                <span className="text-[10px] text-zinc-500 font-mono">turkce-koprusu odası</span>
               </div>
             </div>
             <div className="p-3 rounded-xl bg-[#0c0f17] border border-zinc-800/60 flex items-center gap-3">
               <Terminal className="w-4 h-4 text-emerald-400 shrink-0" />
               <div>
                 <span className="font-bold text-white block text-[11px]">MERKEZİYETSİZ DEFTER</span>
-                <span className="text-[10px] text-zinc-500">Veritabanı yok, açık kayıt</span>
+                <span className="text-[10px] text-zinc-500 font-mono">Veritabanı yok, açık kayıt</span>
               </div>
             </div>
           </div>
 
-          <div className="p-4 rounded-2xl bg-[#0c0f17] border border-zinc-800 flex flex-wrap items-center justify-between gap-4 text-xs font-mono">
+          <div className="p-4 rounded-xl bg-[#0c0f17] border border-zinc-800 flex flex-wrap items-center justify-between gap-4 text-xs font-mono">
             <div>
               <span className="text-zinc-500 text-[10px] block">VADE TARİHİ</span>
               <span className="font-bold text-zinc-200">{activeMarket.endDate}</span>
@@ -721,7 +711,7 @@ export default function Home() {
           </div>
 
           <div className="p-3 rounded-xl bg-zinc-950/80 border border-zinc-800/80 overflow-x-auto flex items-center gap-4 text-xs font-mono scrollbar-none">
-            <span className="px-2 py-0.5 rounded bg-amber-400/10 text-amber-400 font-black text-[10px] whitespace-nowrap">
+            <span className="px-2 py-0.5 rounded bg-amber-400/10 text-amber-400 font-bold text-[10px] whitespace-nowrap">
               • CANLI AKIŞ
             </span>
             {recentFeed.length > 0 ? (
@@ -741,17 +731,17 @@ export default function Home() {
             )}
           </div>
 
-          <div className="p-6 rounded-3xl bg-[#0c0f17] border border-zinc-800 shadow-xl space-y-4">
+          <div className="p-6 rounded-2xl bg-[#0c0f17] border border-zinc-800 shadow-xl space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-base font-black text-white">Tahmin Yapanlar Defteri</h3>
+                <h3 className="text-base font-bold text-white tracking-tight">Tahmin Yapanlar Defteri</h3>
                 <p className="text-xs text-zinc-500">Bu pazara Technocore üzerinden oy veren katılımcılar</p>
               </div>
 
               <div className="flex gap-1 bg-zinc-950 p-1 rounded-xl border border-zinc-800">
                 <button
                   onClick={() => setLeaderboardTab('biggest')}
-                  className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                  className={`px-3 py-1 rounded-lg text-[11px] font-semibold transition-all ${
                     leaderboardTab === 'biggest' ? 'bg-zinc-800 text-white shadow' : 'text-zinc-400 hover:text-white'
                   }`}
                 >
@@ -759,7 +749,7 @@ export default function Home() {
                 </button>
                 <button
                   onClick={() => setLeaderboardTab('recent')}
-                  className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                  className={`px-3 py-1 rounded-lg text-[11px] font-semibold transition-all ${
                     leaderboardTab === 'recent' ? 'bg-zinc-800 text-white shadow' : 'text-zinc-400 hover:text-white'
                   }`}
                 >
@@ -768,16 +758,16 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="space-y-2.5">
+            <div className="space-y-2">
               {displayedCalls.length > 0 ? (
                 displayedCalls.map((item, idx) => (
                   <div
                     key={idx}
-                    className="p-3.5 rounded-2xl bg-zinc-950/60 border border-zinc-800/80 flex items-center justify-between text-xs font-mono hover:border-zinc-700 transition-all"
+                    className="p-3 rounded-xl bg-zinc-950/60 border border-zinc-800/80 flex items-center justify-between text-xs font-mono hover:border-zinc-700 transition-all"
                   >
                     <div className="flex items-center gap-3">
-                      <span className="w-5 text-zinc-600 font-bold text-center">{item.rank || idx + 1}</span>
-                      <div className="font-semibold text-zinc-300 flex items-center gap-2">
+                      <span className="w-5 text-zinc-600 font-semibold text-center">{item.rank || idx + 1}</span>
+                      <div className="font-medium text-zinc-300 flex items-center gap-2">
                         {item.did}
                         {item.rawDid === did && (
                           <span className="px-1.5 py-0.5 rounded bg-amber-400/10 text-amber-300 text-[10px] font-bold">
@@ -789,8 +779,8 @@ export default function Home() {
 
                     <div className="flex items-center gap-4">
                       <div className="text-right">
-                        <span className="font-bold text-white block">{item.amount.toLocaleString()} kESCOBAR</span>
-                        <span className={`text-[10px] font-extrabold uppercase ${
+                        <span className="font-semibold text-white block">{item.amount.toLocaleString()} kESCOBAR</span>
+                        <span className={`text-[10px] font-bold uppercase ${
                           item.side === 'yes' ? 'text-emerald-400' : 'text-rose-400'
                         }`}>
                           {item.side === 'yes' ? 'EVET' : 'HAYIR'}
@@ -814,14 +804,14 @@ export default function Home() {
 
         {/* SAĞ BÖLÜM: Tahmin Paneli */}
         <div className="lg:col-span-4 space-y-6">
-          <div className="p-6 rounded-3xl bg-[#0c0f17] border border-amber-500/40 shadow-2xl sticky top-20 space-y-6">
+          <div className="p-6 rounded-2xl bg-[#0c0f17] border border-amber-500/40 shadow-xl sticky top-20 space-y-6">
             
             <div className="flex items-center justify-between border-b border-zinc-800/80 pb-4">
               <div>
-                <h3 className="text-base font-black text-white">Tahminini İmzala</h3>
+                <h3 className="text-base font-bold text-white tracking-tight">Tahminini İmzala</h3>
                 <p className="text-[11px] text-zinc-500">Kararınızı Ed25519 ile mühürleyin</p>
               </div>
-              <span className="text-[10px] uppercase font-bold tracking-widest px-2.5 py-1 rounded-full bg-amber-400/10 text-amber-300 border border-amber-400/20">
+              <span className="text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 rounded-full bg-amber-400/10 text-amber-300 border border-amber-400/20">
                 3 ADIMDA İŞLEM
               </span>
             </div>
@@ -831,16 +821,16 @@ export default function Home() {
               <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block">
                 1. kESCOBAR BAKİYENİ AL
               </span>
-              <div className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 flex items-center justify-between">
+              <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-between">
                 <div>
                   <span className="text-[10px] text-zinc-500 block">KULLANILABİLİR BAKİYE</span>
-                  <div className="text-xl font-black text-amber-400">
+                  <div className="text-xl font-extrabold text-amber-400 tracking-tight">
                     {balance.toLocaleString()} <span className="text-xs text-zinc-400 font-normal">kESCOBAR</span>
                   </div>
                 </div>
                 <button
                   onClick={handleClaim}
-                  className="py-2 px-3 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-black font-black text-xs transition-all shadow-md shadow-amber-500/20 active:scale-95 flex items-center gap-1.5"
+                  className="py-2 px-3 rounded-lg bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-black font-bold text-xs transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
                 >
                   <Coins className="w-3.5 h-3.5" />
                   +1.000 Al
@@ -856,24 +846,24 @@ export default function Home() {
               <div className="grid grid-cols-2 gap-3">
                 <button
                   onClick={() => setSelectedSide('yes')}
-                  className={`p-3.5 rounded-2xl border text-center transition-all ${
+                  className={`p-3.5 rounded-xl border text-center transition-all ${
                     selectedSide === 'yes'
-                      ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 shadow-lg shadow-emerald-500/10'
+                      ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 shadow-md shadow-emerald-500/10'
                       : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'
                   }`}
                 >
-                  <span className="text-sm font-black block">EVET</span>
+                  <span className="text-sm font-bold block">EVET</span>
                   <span className="text-[10px] text-zinc-500">Gerçekleşecek</span>
                 </button>
                 <button
                   onClick={() => setSelectedSide('no')}
-                  className={`p-3.5 rounded-2xl border text-center transition-all ${
+                  className={`p-3.5 rounded-xl border text-center transition-all ${
                     selectedSide === 'no'
-                      ? 'bg-rose-500/20 border-rose-400 text-rose-300 shadow-lg shadow-rose-500/10'
+                      ? 'bg-rose-500/20 border-rose-400 text-rose-300 shadow-md shadow-rose-500/10'
                       : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'
                   }`}
                 >
-                  <span className="text-sm font-black block">HAYIR</span>
+                  <span className="text-sm font-bold block">HAYIR</span>
                   <span className="text-[10px] text-zinc-500">Gecikir / İptal</span>
                 </button>
               </div>
@@ -889,9 +879,9 @@ export default function Home() {
                   <button
                     key={amt}
                     onClick={() => setBetAmount(amt)}
-                    className={`py-2 rounded-xl text-xs font-bold transition-all ${
+                    className={`py-2 rounded-lg text-xs font-semibold transition-all ${
                       betAmount === amt
-                        ? 'bg-amber-400 text-black shadow-md shadow-amber-400/20'
+                        ? 'bg-amber-400 text-black font-bold shadow-sm'
                         : 'bg-zinc-950 border border-zinc-800 text-zinc-400 hover:text-white'
                     }`}
                   >
@@ -900,9 +890,9 @@ export default function Home() {
                 ))}
                 <button
                   onClick={() => setBetAmount(balance > 0 ? balance : 1000)}
-                  className={`py-2 rounded-xl text-xs font-bold transition-all ${
+                  className={`py-2 rounded-lg text-xs font-semibold transition-all ${
                     betAmount === balance
-                      ? 'bg-amber-400 text-black shadow-md shadow-amber-400/20'
+                      ? 'bg-amber-400 text-black font-bold shadow-sm'
                       : 'bg-zinc-950 border border-zinc-800 text-zinc-400 hover:text-white'
                   }`}
                 >
@@ -914,10 +904,10 @@ export default function Home() {
             <button
               disabled={isSubmitting}
               onClick={handlePlaceCall}
-              className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-wider transition-all shadow-xl flex items-center justify-center gap-2 active:scale-98 disabled:opacity-50 ${
+              className={`w-full py-3.5 rounded-xl font-bold text-sm uppercase tracking-wider transition-all shadow-lg flex items-center justify-center gap-2 active:scale-98 disabled:opacity-50 ${
                 selectedSide === 'yes'
-                  ? 'bg-emerald-500 hover:bg-emerald-400 text-black shadow-emerald-500/20'
-                  : 'bg-rose-500 hover:bg-rose-400 text-white shadow-rose-500/20'
+                  ? 'bg-emerald-500 hover:bg-emerald-400 text-black'
+                  : 'bg-rose-500 hover:bg-rose-400 text-white'
               }`}
             >
               {isSubmitting ? (
