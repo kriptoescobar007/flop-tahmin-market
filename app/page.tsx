@@ -50,7 +50,6 @@ interface NetworkLog {
 }
 
 const STORAGE_KEY_CALLS = 'kescobar_permanent_calls_v2';
-const STORAGE_KEY_MY_VOTES = 'kescobar_my_local_votes_v2';
 
 export default function Home() {
   const [activePortalTab, setActivePortalTab] = useState<'market' | 'avatar' | 'radar' | 'proves'>('market');
@@ -69,7 +68,7 @@ export default function Home() {
   const [copiedKey, setCopiedKey] = useState(false);
   const [copiedDid, setCopiedDid] = useState(false);
 
-  // Kalıcı Tahmin State'i (Sayfa yenilense de silinmez)
+  // Kalıcı Tahmin State'i
   const [allCalls, setAllCalls] = useState<ParsedCall[]>([]);
   const [networkLogs, setNetworkLogs] = useState<NetworkLog[]>([]);
   const [leaderboardTab, setLeaderboardTab] = useState<'biggest' | 'recent'>('biggest');
@@ -81,7 +80,7 @@ export default function Home() {
   const activeMarket = MARKETS.find(m => m.id === selectedMarketId) || MARKETS[0];
   const avatarUrl = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(did || 'kriptoescobar')}&backgroundColor=0d1017,111827`;
 
-  // 1. İlk Yükleme: Kimlik ve Hafızadaki Kalıcı Oyları Çek
+  // 1. İlk Yükleme
   useEffect(() => {
     let savedDid = localStorage.getItem('kescobar_did');
     let savedKey = localStorage.getItem('kescobar_key');
@@ -99,7 +98,6 @@ export default function Home() {
     if (savedBal) setBalance(parseInt(savedBal, 10));
     if (savedName) setAgentName(savedName);
 
-    // Hafızadaki kalıcı oyları anında yükle (Sayfa açılır açılmaz ekranda belirir)
     const storedCalls = localStorage.getItem(STORAGE_KEY_CALLS);
     if (storedCalls) {
       try {
@@ -110,7 +108,6 @@ export default function Home() {
       } catch (_) {}
     }
 
-    // Technocore odasından yeni gelenleri tara
     fetchTechnocoreLogs();
     const interval = setInterval(fetchTechnocoreLogs, 10000);
     return () => clearInterval(interval);
@@ -141,17 +138,15 @@ export default function Home() {
     }
   };
 
-  // 3. Sıkı Filtreleme ve Hafıza Birleştirme
+  // 3. Sıkı Filtreleme
   const mergeRoomData = (text: string) => {
     const lines = text.split('\n');
     const validMarkets = MARKETS.map(m => m.id);
     const radLogs: NetworkLog[] = [];
 
-    // Mevcut kayıtlı oyları al
     let currentMap = new Map<string, ParsedCall>();
     allCalls.forEach(c => currentMap.set(c.nonce, c));
 
-    // Yerel depodan da yükle (senkronizasyon garantisi)
     try {
       const stored = localStorage.getItem(STORAGE_KEY_CALLS);
       if (stored) {
@@ -161,7 +156,6 @@ export default function Home() {
     } catch (_) {}
 
     lines.forEach((line, index) => {
-      // Ağ Radarı için genel kayıtları filtrele (Bot spamlarını ayıkla)
       if (line.includes('call1 {')) {
         const senderMatch = line.match(/<([^>]+)>/);
         const sender = senderMatch ? senderMatch[1] : 'Ajan';
@@ -178,16 +172,13 @@ export default function Home() {
           content: line.slice(line.indexOf('call1 {'), line.indexOf('call1 {') + 90) + '...'
         });
 
-        // TAHMİN ÇÖZÜMLEME & BOTLARI TAMAMEN ELEME
         try {
           const jsonStr = line.substring(line.indexOf('call1 {') + 6);
           const data = JSON.parse(jsonStr);
 
-          // Sadece gerçek "call" tahminlerini ve listemizdeki pazarları al
           if (data.type === 'call' && validMarkets.includes(data.market)) {
             const callNonce = data.nonce || `fallback_${data.from}_${data.put}_${data.market}`;
             
-            // Eğer bu oy henüz hafızada yoksa ekle
             if (!currentMap.has(callNonce)) {
               const rawDidStr = data.from || 'did:key:z6Mk...';
               const shortDid = rawDidStr.length > 18 
@@ -213,8 +204,6 @@ export default function Home() {
     });
 
     const mergedArray = Array.from(currentMap.values());
-    
-    // Kalıcı hafızaya yaz (LocalStorage) -> Sayfa yenilense de hiçbir oy kaybolmaz
     localStorage.setItem(STORAGE_KEY_CALLS, JSON.stringify(mergedArray));
     setAllCalls(mergedArray);
 
@@ -223,7 +212,7 @@ export default function Home() {
     }
   };
 
-  // 4. Seçili Pazar İçin Dinamik Havuz ve Çarpan Hesaplama
+  // 4. Havuz ve Çarpanlar
   const marketCalls = allCalls.filter(c => c.market === selectedMarketId);
   const yesCallsAmount = marketCalls.filter(c => c.side === 'yes').reduce((acc, c) => acc + c.amount, 0);
   const noCallsAmount = marketCalls.filter(c => c.side === 'no').reduce((acc, c) => acc + c.amount, 0);
@@ -238,7 +227,6 @@ export default function Home() {
   const noMultiplier = (totalMarketPool / noPool).toFixed(2);
   const totalParticipants = marketCalls.length + 43;
 
-  // Lider Tablosu İçin Zenginleştirme
   const enrichedMarketCalls = marketCalls.map(c => ({
     ...c,
     multiplier: c.side === 'yes' ? `x${yesMultiplier}` : `x${noMultiplier}`
@@ -248,9 +236,7 @@ export default function Home() {
     ? [...enrichedMarketCalls].sort((a, b) => b.amount - a.amount).slice(0, 10)
     : [...enrichedMarketCalls].sort((a, b) => b.timestamp - a.timestamp).slice(0, 10);
 
-  const recentFeed = [...enrichedMarketCalls].sort((a, b) => b.timestamp - a.timestamp).slice(0, 6);
-
-  // 5. Tahmin Gönderme (Yerel Anında Kilitleme + Technocore Gönderimi)
+  // 5. Tahmin Gönderme
   const handlePlaceCall = async () => {
     if (balance < betAmount) {
       notify('error', 'Yetersiz kESCOBAR! Sağdaki panelden 1.000 kESCOBAR talep edin.');
@@ -263,7 +249,6 @@ export default function Home() {
     const generatedNonce = Math.random().toString(16).substring(2, 16);
     const shortDid = did.length > 18 ? `${did.slice(0, 8)}...${did.slice(-5)}` : did;
 
-    // A. Anında yerel hafızaya mühürle (Refresh yapsan dahi anında orada kalır)
     const newCallRecord: ParsedCall = {
       nonce: generatedNonce,
       rank: 0,
@@ -281,12 +266,10 @@ export default function Home() {
     setAllCalls(updatedList);
     localStorage.setItem(STORAGE_KEY_CALLS, JSON.stringify(updatedList));
 
-    // Bakiyeyi güncelle
     const newBal = balance - betAmount;
     setBalance(newBal);
     localStorage.setItem('kescobar_balance', newBal.toString());
 
-    // B. Technocore Açık Odasına Gönder
     const sender = `esc_${did.replace(/[^a-zA-Z0-9]/g, '').slice(-8)}`;
     const callPayload = `call1 ` + JSON.stringify({
       from: did,
@@ -310,7 +293,7 @@ export default function Home() {
     }
   };
 
-  // Musluk (Faucet)
+  // Musluk
   const handleClaim = async () => {
     const newBal = balance + 1000;
     setBalance(newBal);
@@ -444,7 +427,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Portal Sekmeleri */}
           <nav className="flex items-center gap-1 bg-zinc-950 p-1 rounded-xl border border-zinc-800 text-xs font-semibold">
             <button
               onClick={() => setActivePortalTab('market')}
@@ -590,7 +572,7 @@ export default function Home() {
                   onClick={() => setAuthTab('backup')}
                   className={`py-2 px-3 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-2 ${
                     authTab === 'backup'
-                  ? 'bg-amber-400 text-black font-bold shadow-md shadow-amber-400/20'
+                      ? 'bg-amber-400 text-black font-bold shadow-md shadow-amber-400/20'
                       : 'bg-zinc-950 text-zinc-400 hover:text-white border border-zinc-800'
                   }`}
                 >
@@ -853,28 +835,6 @@ export default function Home() {
                   <span className="text-zinc-500 text-[10px] block">KATILIMCI</span>
                   <span className="font-bold text-white">{totalParticipants}</span>
                 </div>
-              </div>
-
-              {/* Canlı Akış Şeridi */}
-              <div className="p-3 rounded-xl bg-zinc-950/80 border border-zinc-800/80 overflow-x-auto flex items-center gap-4 text-xs font-mono scrollbar-none">
-                <span className="px-2 py-0.5 rounded bg-amber-400/10 text-amber-400 font-bold text-[10px] whitespace-nowrap">
-                  • CANLI AKIŞ
-                </span>
-                {recentFeed.length > 0 ? (
-                  recentFeed.map((call, i) => (
-                    <div key={i} className="flex items-center gap-1.5 whitespace-nowrap text-zinc-300 text-[11px]">
-                      <span className="text-zinc-500">•</span>
-                      <span className="text-amber-300 font-bold">{call.did}</span>
-                      <span className={call.side === 'yes' ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
-                        {call.side === 'yes' ? 'EVET' : 'HAYIR'}
-                      </span>
-                      <span>{call.amount} kESCOBAR</span>
-                      <span className="text-zinc-600 text-[10px]">{call.timeAgo}</span>
-                    </div>
-                  ))
-                ) : (
-                  <span className="text-zinc-500 text-[11px]">Bu pazara henüz oy verilmedi. İlk tahmini siz yapın!</span>
-                )}
               </div>
 
               {/* Tahmin Defteri (Who has called it) */}
