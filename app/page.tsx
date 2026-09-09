@@ -11,18 +11,14 @@ import {
   ArrowUpRight, 
   Youtube, 
   Activity,
-  RefreshCw, 
   Download, 
   Upload, 
   KeyRound, 
   Layers, 
-  Bot, 
   Radio, 
   ShieldCheck, 
-  Share2, 
   CheckCircle2, 
   AlertTriangle,
-  Sparkles,
   Database
 } from 'lucide-react';
 
@@ -52,7 +48,7 @@ interface NetworkLog {
 const STORAGE_KEY_CALLS = 'kescobar_permanent_calls_v2';
 
 export default function Home() {
-  const [activePortalTab, setActivePortalTab] = useState<'market' | 'avatar' | 'radar' | 'proves'>('market');
+  const [activePortalTab, setActivePortalTab] = useState<'market' | 'radar' | 'proves'>('market');
 
   const [selectedMarketId, setSelectedMarketId] = useState<string>('flop-mainnet-2027');
   const [selectedSide, setSelectedSide] = useState<'yes' | 'no'>('yes');
@@ -62,7 +58,6 @@ export default function Home() {
   const [balance, setBalance] = useState<number>(0);
   const [did, setDid] = useState<string>('');
   const [privateKey, setPrivateKey] = useState<string>('');
-  const [agentName, setAgentName] = useState<string>('EscobarAgent');
   const [inputKey, setInputKey] = useState<string>('');
   const [authTab, setAuthTab] = useState<'create' | 'import' | 'backup'>('create');
   const [copiedKey, setCopiedKey] = useState(false);
@@ -72,20 +67,16 @@ export default function Home() {
   const [allCalls, setAllCalls] = useState<ParsedCall[]>([]);
   const [networkLogs, setNetworkLogs] = useState<NetworkLog[]>([]);
   const [leaderboardTab, setLeaderboardTab] = useState<'biggest' | 'recent'>('biggest');
-  const [isLoadingLogs, setIsLoadingLogs] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [statusNotice, setStatusNotice] = useState<{ type: 'success' | 'info' | 'error'; text: string } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const activeMarket = MARKETS.find(m => m.id === selectedMarketId) || MARKETS[0];
-  const avatarUrl = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(did || 'kriptoescobar')}&backgroundColor=0d1017,111827`;
 
-  // 1. İlk Yükleme
   useEffect(() => {
     let savedDid = localStorage.getItem('kescobar_did');
     let savedKey = localStorage.getItem('kescobar_key');
     let savedBal = localStorage.getItem('kescobar_balance');
-    let savedName = localStorage.getItem('kescobar_agent_name');
 
     if (!savedDid || !savedKey) {
       savedKey = 'ed25519_sk_' + Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
@@ -96,7 +87,6 @@ export default function Home() {
     setPrivateKey(savedKey);
     setDid(savedDid);
     if (savedBal) setBalance(parseInt(savedBal, 10));
-    if (savedName) setAgentName(savedName);
 
     const storedCalls = localStorage.getItem(STORAGE_KEY_CALLS);
     if (storedCalls) {
@@ -113,9 +103,7 @@ export default function Home() {
     return () => clearInterval(interval);
   }, []);
 
-  // 2. Technocore Odasını Oku ve Kalıcı Hafızaya Kaynaştır
   const fetchTechnocoreLogs = async () => {
-    setIsLoadingLogs(true);
     try {
       let rawText = '';
       try {
@@ -133,12 +121,9 @@ export default function Home() {
       }
     } catch (e) {
       console.error('Log okuma hatası:', e);
-    } finally {
-      setIsLoadingLogs(false);
     }
   };
 
-  // 3. Sıkı Filtreleme
   const mergeRoomData = (text: string) => {
     const lines = text.split('\n');
     const validMarkets = MARKETS.map(m => m.id);
@@ -212,7 +197,6 @@ export default function Home() {
     }
   };
 
-  // 4. Havuz ve Çarpanlar
   const marketCalls = allCalls.filter(c => c.market === selectedMarketId);
   const yesCallsAmount = marketCalls.filter(c => c.side === 'yes').reduce((acc, c) => acc + c.amount, 0);
   const noCallsAmount = marketCalls.filter(c => c.side === 'no').reduce((acc, c) => acc + c.amount, 0);
@@ -236,7 +220,6 @@ export default function Home() {
     ? [...enrichedMarketCalls].sort((a, b) => b.amount - a.amount).slice(0, 10)
     : [...enrichedMarketCalls].sort((a, b) => b.timestamp - a.timestamp).slice(0, 10);
 
-  // 5. Tahmin Gönderme
   const handlePlaceCall = async () => {
     if (balance < betAmount) {
       notify('error', 'Yetersiz kESCOBAR! Sağdaki panelden 1.000 kESCOBAR talep edin.');
@@ -293,7 +276,6 @@ export default function Home() {
     }
   };
 
-  // Musluk
   const handleClaim = async () => {
     const newBal = balance + 1000;
     setBalance(newBal);
@@ -372,7 +354,6 @@ export default function Home() {
   const handleDownloadBackup = () => {
     const backupData = {
       app: 'KriptoEscobar Flop Technocore Portalı',
-      agentName,
       did,
       privateKey,
       balance,
@@ -427,6 +408,7 @@ export default function Home() {
             </div>
           </div>
 
+          {/* Portal Sekmeleri (Sadece 3 Sekme) */}
           <nav className="flex items-center gap-1 bg-zinc-950 p-1 rounded-xl border border-zinc-800 text-xs font-semibold">
             <button
               onClick={() => setActivePortalTab('market')}
@@ -436,15 +418,6 @@ export default function Home() {
             >
               <Layers className="w-3.5 h-3.5" />
               Tahmin Piyasası
-            </button>
-            <button
-              onClick={() => setActivePortalTab('avatar')}
-              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
-                activePortalTab === 'avatar' ? 'bg-amber-400 text-black font-bold shadow' : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              <Bot className="w-3.5 h-3.5" />
-              Ajan Yüzü
             </button>
             <button
               onClick={() => setActivePortalTab('radar')}
@@ -466,16 +439,21 @@ export default function Home() {
             </button>
           </nav>
 
-          <div className="flex items-center gap-2.5">
-            <button 
-              onClick={fetchTechnocoreLogs}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-xs font-medium text-zinc-400 hover:text-white transition-all"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingLogs ? 'animate-spin text-amber-400' : ''}`} />
-              Yenile
-            </button>
+          {/* Sosyal Butonlar (YouTube & X) */}
+          <div className="flex items-center gap-2">
             <a
-              href="https://youtube.com/@kriptoescobar0"
+              href="https://x.com/kriptoescobar0"
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-bold transition-all border border-zinc-700 shadow-sm"
+            >
+              <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+              </svg>
+              @kriptoescobar0
+            </a>
+            <a
+              href="https://youtube.com/@kriptoescobar"
               target="_blank"
               rel="noreferrer"
               className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all shadow-sm"
@@ -498,13 +476,11 @@ export default function Home() {
         </div>
         <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight text-white mb-2">
           {activePortalTab === 'market' && 'Piyasayı öngör. Tahminini imzala.'}
-          {activePortalTab === 'avatar' && 'Ajanına bir yüz ver. Kimliğini sahiplen.'}
           {activePortalTab === 'radar' && 'Ağ Radarı: Technocore üzerinde canlı akış.'}
           {activePortalTab === 'proves' && 'Protokol Şeffaflığı: Neyi kanıtlar, neyi kanıtlamaz?'}
         </h1>
         <p className="text-xs md:text-sm text-zinc-400 max-w-2xl leading-relaxed">
           {activePortalTab === 'market' && 'Tarayıcınızda Ed25519 ile tahmin yapın. Veritabanı ve sunucu bulunmaz; tüm oylar turkce-koprusu odasında kriptografik olarak saklanır.'}
-          {activePortalTab === 'avatar' && 'DID anahtarınızdan üretilen deterministik 3D robot avatarınızla kimliğinizi oluşturun ve toplulukla paylaşın.'}
           {activePortalTab === 'radar' && 'Flop Labs Technocore açık log defterindeki gerçek zamanlı tahmin ve musluk hareketlerini izleyin.'}
           {activePortalTab === 'proves' && 'Merkeziyetsiz Ed25519 kriptografik imzalarıyla nelerin garanti edildiğini ve testnet sınırlarını inceleyin.'}
         </p>
@@ -1041,110 +1017,21 @@ export default function Home() {
         </div>
       )}
 
-      {/* 2. SEKME: AJAN YÜZÜ */}
-      {activePortalTab === 'avatar' && (
-        <section className="w-full max-w-4xl px-4 py-8 space-y-8">
-          <div className="p-8 rounded-3xl bg-[#0c0f17] border border-zinc-800 shadow-2xl grid grid-cols-1 md:grid-cols-12 gap-8 items-center relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-80 h-80 bg-amber-400/5 rounded-full blur-3xl pointer-events-none" />
-
-            <div className="md:col-span-5 flex flex-col items-center justify-center text-center p-6 rounded-2xl bg-zinc-950/80 border border-zinc-800">
-              <div className="relative w-44 h-44 mb-4 rounded-3xl bg-gradient-to-tr from-amber-500/10 via-zinc-900 to-zinc-900 border-2 border-amber-400/40 p-3 shadow-2xl flex items-center justify-center">
-                <img
-                  src={avatarUrl}
-                  alt="Ajan Avatarı"
-                  className="w-full h-full object-contain"
-                />
-                <span className="absolute bottom-2 right-2 w-4 h-4 rounded-full bg-emerald-400 border-2 border-black" />
-              </div>
-              <h3 className="text-lg font-extrabold text-white tracking-tight">{agentName}</h3>
-              <p className="text-xs text-amber-400 font-mono mt-0.5">Technocore Doğrulanmış Ajan</p>
-            </div>
-
-            <div className="md:col-span-7 space-y-5">
-              <div>
-                <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider block mb-1">
-                  Ajan Takma Adınız
-                </span>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={agentName}
-                    onChange={(e) => setAgentName(e.target.value)}
-                    className="flex-1 p-3 bg-zinc-950 rounded-xl border border-zinc-800 text-sm font-bold text-white focus:outline-none focus:border-amber-400"
-                    placeholder="Ajanınıza isim verin..."
-                  />
-                  <button
-                    onClick={() => {
-                      localStorage.setItem('kescobar_agent_name', agentName);
-                      notify('success', `Ajan ismi kaydedildi: ${agentName}`);
-                    }}
-                    className="px-4 py-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-xs font-bold text-white"
-                  >
-                    Kaydet
-                  </button>
-                </div>
-              </div>
-
-              <div className="p-4 rounded-xl bg-zinc-950/60 border border-zinc-800/80 space-y-2 text-xs font-mono">
-                <div className="flex justify-between">
-                  <span className="text-zinc-500">DID:</span>
-                  <span className="text-amber-300 font-bold truncate max-w-[220px]">{did}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-zinc-500">Oda:</span>
-                  <span className="text-cyan-400">turkce-koprusu</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-zinc-500">Toplam Oylarınız:</span>
-                  <span className="text-emerald-400 font-bold">{allCalls.filter(c => c.rawDid === did).length} Adet</span>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap gap-3">
-                <a
-                  href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(
-                    `Flop Labs Technocore ağında otonom ajan kimliğimi mühürledim! 🤖✨\n\nAjan: ${agentName}\nDID: ${did.slice(0, 16)}...\nTahmin Portalı: https://flop-tahmin-market.vercel.app/\n\n@kriptoescobar0 @flop_labs #FlopLabs #Technocore`
-                  )}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex-1 py-3 px-4 rounded-xl bg-[#1d9bf0] hover:bg-[#1a8cd8] text-white text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-md"
-                >
-                  <Share2 className="w-4 h-4" />
-                  X'te Paylaş
-                </a>
-                <button
-                  onClick={handleGenerateNewIdentity}
-                  className="py-3 px-4 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-300 text-xs font-semibold flex items-center gap-2"
-                >
-                  <Sparkles className="w-4 h-4 text-amber-400" />
-                  Yeni Yüz
-                </button>
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* 3. SEKME: AĞ RADARI */}
+      {/* ======================================================== */}
+      {/* 2. SEKME: AĞ RADARI */}
+      {/* ======================================================== */}
       {activePortalTab === 'radar' && (
         <section className="w-full max-w-6xl px-4 py-8 space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-[#0c0f17] border border-zinc-800">
             <div>
               <h3 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                Ağda Son Görülenler (Seen recently on the network)
+                Ağda Son Görülenler (Technocore Canlı Log Defteri)
               </h3>
               <p className="text-xs text-zinc-500 font-mono mt-0.5">
-                Technocore turkce-koprusu açık odasındaki canlı mesaj akışı
+                Technocore turkce-koprusu açık odasındaki canlı tahmin ve musluk akışı
               </p>
             </div>
-            <button
-              onClick={fetchTechnocoreLogs}
-              className="px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-xs font-semibold text-zinc-300 hover:text-white flex items-center gap-1.5"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingLogs ? 'animate-spin text-amber-400' : ''}`} />
-              Radarı Tara
-            </button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1163,11 +1050,9 @@ export default function Home() {
                     </div>
 
                     <div className="flex items-center gap-2.5 mb-2">
-                      <img
-                        src={`https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(log.sender)}`}
-                        alt="bot"
-                        className="w-7 h-7 rounded-lg bg-zinc-950 p-0.5 border border-zinc-800 shrink-0"
-                      />
+                      <div className="w-7 h-7 rounded-lg bg-amber-400/10 border border-amber-400/30 flex items-center justify-center font-bold text-amber-400 text-xs font-mono shrink-0">
+                        TC
+                      </div>
                       <span className="text-xs font-bold text-zinc-200 font-mono truncate">
                         {log.sender}
                       </span>
@@ -1193,15 +1078,17 @@ export default function Home() {
         </section>
       )}
 
-      {/* 4. SEKME: PROTOKOL ŞEFFAFLIĞI */}
+      {/* ======================================================== */}
+      {/* 3. SEKME: PROTOKOL ŞEFFAFLIĞI */}
+      {/* ======================================================== */}
       {activePortalTab === 'proves' && (
         <section className="w-full max-w-5xl px-4 py-8 space-y-6">
           <div className="text-center space-y-2 mb-8">
             <h2 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
-              What it proves, and what it doesn't
+              Protokolün Kanıtladıkları ve Sınırları
             </h2>
             <p className="text-xs md:text-sm text-zinc-400 max-w-xl mx-auto">
-              Merkezi sunucuların bulunmadığı açık protokollerde şeffaflık esastır.
+              Merkezi sunucuların bulunmadığı açık protokollerde şeffaflık temel esastır.
             </p>
           </div>
 
@@ -1209,7 +1096,7 @@ export default function Home() {
             <div className="p-6 rounded-3xl bg-[#0c0f17] border border-emerald-500/30 shadow-xl space-y-4">
               <div className="flex items-center gap-2 text-emerald-400 font-extrabold text-xs uppercase tracking-wider border-b border-zinc-800/80 pb-3">
                 <CheckCircle2 className="w-4 h-4" />
-                NEYİ KANITLAR? (PROVES)
+                NEYİ KANITLAR?
               </div>
               <div className="space-y-4 text-xs leading-relaxed">
                 <div className="p-3.5 rounded-xl bg-zinc-950/60 border border-emerald-500/10 space-y-1">
@@ -1230,7 +1117,7 @@ export default function Home() {
             <div className="p-6 rounded-3xl bg-[#0c0f17] border border-amber-500/30 shadow-xl space-y-4">
               <div className="flex items-center gap-2 text-amber-400 font-extrabold text-xs uppercase tracking-wider border-b border-zinc-800/80 pb-3">
                 <AlertTriangle className="w-4 h-4" />
-                NEYİ KANITLAMAZ? (DOES NOT PROVE)
+                NEYİ KANITLAMAZ?
               </div>
               <div className="space-y-4 text-xs leading-relaxed">
                 <div className="p-3.5 rounded-xl bg-zinc-950/60 border border-amber-500/10 space-y-1">
