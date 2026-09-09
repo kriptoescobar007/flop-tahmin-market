@@ -19,7 +19,10 @@ import {
   ShieldCheck, 
   CheckCircle2, 
   AlertTriangle,
-  Database
+  Database,
+  Award,
+  Flame,
+  Sparkles
 } from 'lucide-react';
 
 interface ParsedCall {
@@ -46,9 +49,11 @@ interface NetworkLog {
 }
 
 const STORAGE_KEY_CALLS = 'kescobar_permanent_calls_v2';
+const STORAGE_KEY_GM_DATE = 'kescobar_last_gm_date';
+const STORAGE_KEY_STREAK = 'kescobar_gm_streak';
 
 export default function Home() {
-  const [activePortalTab, setActivePortalTab] = useState<'market' | 'radar' | 'proves'>('market');
+  const [activePortalTab, setActivePortalTab] = useState<'market' | 'radar' | 'proves' | 'passport'>('market');
 
   const [selectedMarketId, setSelectedMarketId] = useState<string>('flop-mainnet-2027');
   const [selectedSide, setSelectedSide] = useState<'yes' | 'no'>('yes');
@@ -62,6 +67,10 @@ export default function Home() {
   const [authTab, setAuthTab] = useState<'create' | 'import' | 'backup'>('create');
   const [copiedKey, setCopiedKey] = useState(false);
   const [copiedDid, setCopiedDid] = useState(false);
+
+  // Pasaport & Günlük GM State'leri
+  const [gmStreak, setGmStreak] = useState<number>(1);
+  const [hasClaimedGmToday, setHasClaimedGmToday] = useState<boolean>(false);
 
   // Kalıcı Tahmin State'i
   const [allCalls, setAllCalls] = useState<ParsedCall[]>([]);
@@ -77,6 +86,8 @@ export default function Home() {
     let savedDid = localStorage.getItem('kescobar_did');
     let savedKey = localStorage.getItem('kescobar_key');
     let savedBal = localStorage.getItem('kescobar_balance');
+    let savedStreak = localStorage.getItem(STORAGE_KEY_STREAK);
+    let lastGmDate = localStorage.getItem(STORAGE_KEY_GM_DATE);
 
     if (!savedDid || !savedKey) {
       savedKey = 'ed25519_sk_' + Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
@@ -87,6 +98,12 @@ export default function Home() {
     setPrivateKey(savedKey);
     setDid(savedDid);
     if (savedBal) setBalance(parseInt(savedBal, 10));
+
+    if (savedStreak) setGmStreak(parseInt(savedStreak, 10));
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (lastGmDate === todayStr) {
+      setHasClaimedGmToday(true);
+    }
 
     const storedCalls = localStorage.getItem(STORAGE_KEY_CALLS);
     if (storedCalls) {
@@ -146,13 +163,14 @@ export default function Home() {
         const sender = senderMatch ? senderMatch[1] : 'Ajan';
         const isCall = line.includes('"type":"call"');
         const isTap = line.includes('"type":"tap"');
+        const isGm = line.includes('"type":"gm"');
 
         radLogs.push({
           id: `log-${index}-${Date.now()}`,
           sender: sender,
           did: sender.startsWith('esc_') ? `did:key:...${sender.replace('esc_', '')}` : sender,
-          action: isCall ? 'Tahmin İmzası' : isTap ? 'Musluk Talebi' : 'Ağ İletişimi',
-          tag: isCall ? 'TAHMİN' : isTap ? 'MUSLUK' : 'LOG',
+          action: isCall ? 'Tahmin İmzası' : isTap ? 'Musluk Talebi' : isGm ? 'Günlük GM' : 'Ağ İletişimi',
+          tag: isCall ? 'TAHMİN' : isTap ? 'MUSLUK' : isGm ? 'GM' : 'LOG',
           timeAgo: `${Math.max(1, (lines.length - index) * 2)} dk önce`,
           content: line.slice(line.indexOf('call1 {'), line.indexOf('call1 {') + 90) + '...'
         });
@@ -220,6 +238,7 @@ export default function Home() {
     ? [...enrichedMarketCalls].sort((a, b) => b.amount - a.amount).slice(0, 10)
     : [...enrichedMarketCalls].sort((a, b) => b.timestamp - a.timestamp).slice(0, 10);
 
+  // Tahmin Gönderme
   const handlePlaceCall = async () => {
     if (balance < betAmount) {
       notify('error', 'Yetersiz kESCOBAR! Sağdaki panelden 1.000 kESCOBAR talep edin.');
@@ -276,6 +295,7 @@ export default function Home() {
     }
   };
 
+  // Musluk
   const handleClaim = async () => {
     const newBal = balance + 1000;
     setBalance(newBal);
@@ -299,6 +319,48 @@ export default function Home() {
 
     notify('success', '1.000 kESCOBAR bakiyeniz tanımlandı!');
   };
+
+  // Günlük GM İmzası ve Seri Sistemi
+  const handleClaimDailyGm = async () => {
+    if (hasClaimedGmToday) {
+      notify('info', 'Bugünkü GM imzanızı zaten attınız. Yarın tekrar gelin!');
+      return;
+    }
+
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const newStreak = gmStreak + 1;
+    const newBal = balance + 250;
+
+    setGmStreak(newStreak);
+    setHasClaimedGmToday(true);
+    setBalance(newBal);
+
+    localStorage.setItem(STORAGE_KEY_STREAK, newStreak.toString());
+    localStorage.setItem(STORAGE_KEY_GM_DATE, todayStr);
+    localStorage.setItem('kescobar_balance', newBal.toString());
+
+    const sender = `esc_${did.replace(/[^a-zA-Z0-9]/g, '').slice(-8)}`;
+    const gmPayload = `call1 ` + JSON.stringify({
+      from: did,
+      streak: newStreak,
+      type: 'gm',
+      nonce: Math.random().toString(16).substring(2, 14)
+    });
+
+    try {
+      await fetch(`https://technocore.chat/r/turkce-koprusu/say/${sender}/${encodeURIComponent(gmPayload)}`, {
+        method: 'GET',
+        mode: 'no-cors'
+      });
+    } catch (_) {}
+
+    notify('success', `Harika! Günlük GM imzalandı. 🔥 ${newStreak}. Gün Serisi! +250 kESCOBAR eklendi.`);
+  };
+
+  // Airdrop Skor Hesaplaması (0 - 100)
+  const myTotalVotes = allCalls.filter(c => c.rawDid === did).length;
+  const airdropScore = Math.min(100, (did ? 25 : 0) + (myTotalVotes * 15) + (gmStreak * 10) + (balance > 0 ? 15 : 0));
+  const agentRankTitle = airdropScore >= 75 ? 'Escobar Elit Ajanı' : airdropScore >= 40 ? 'Aktif Kaşif Ajan' : 'Çaylak Ajan';
 
   const handleGenerateNewIdentity = () => {
     const newKey = 'ed25519_sk_' + Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
@@ -357,8 +419,10 @@ export default function Home() {
       did,
       privateKey,
       balance,
+      airdropScore,
+      gmStreak,
       room: 'turkce-koprusu',
-      myCallsCount: marketCalls.filter(c => c.rawDid === did).length,
+      myCallsCount: myTotalVotes,
       createdAt: new Date().toISOString(),
     };
     const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
@@ -408,7 +472,7 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Portal Sekmeleri (Sadece 3 Sekme) */}
+          {/* Portal Sekmeleri */}
           <nav className="flex items-center gap-1 bg-zinc-950 p-1 rounded-xl border border-zinc-800 text-xs font-semibold">
             <button
               onClick={() => setActivePortalTab('market')}
@@ -418,6 +482,15 @@ export default function Home() {
             >
               <Layers className="w-3.5 h-3.5" />
               Tahmin Piyasası
+            </button>
+            <button
+              onClick={() => setActivePortalTab('passport')}
+              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+                activePortalTab === 'passport' ? 'bg-amber-400 text-black font-bold shadow' : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              <Award className="w-3.5 h-3.5" />
+              Ajan Pasaportu
             </button>
             <button
               onClick={() => setActivePortalTab('radar')}
@@ -439,7 +512,7 @@ export default function Home() {
             </button>
           </nav>
 
-          {/* Sosyal Butonlar (YouTube & X) */}
+          {/* Sosyal Butonlar */}
           <div className="flex items-center gap-2">
             <a
               href="https://x.com/kriptoescobar0"
@@ -476,11 +549,13 @@ export default function Home() {
         </div>
         <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight text-white mb-2">
           {activePortalTab === 'market' && 'Piyasayı öngör. Tahminini imzala.'}
+          {activePortalTab === 'passport' && 'Ajan Pasaportu & Airdrop Karnesi.'}
           {activePortalTab === 'radar' && 'Ağ Radarı: Technocore üzerinde canlı akış.'}
           {activePortalTab === 'proves' && 'Protokol Şeffaflığı: Neyi kanıtlar, neyi kanıtlamaz?'}
         </h1>
         <p className="text-xs md:text-sm text-zinc-400 max-w-2xl leading-relaxed">
           {activePortalTab === 'market' && 'Tarayıcınızda Ed25519 ile tahmin yapın. Veritabanı ve sunucu bulunmaz; tüm oylar turkce-koprusu odasında kriptografik olarak saklanır.'}
+          {activePortalTab === 'passport' && 'Ağdaki aktivitenizi puanlayın, her gün gelip serinizi koruyarak kESCOBAR kazanın ve airdrop skorunuzu tescilleyin.'}
           {activePortalTab === 'radar' && 'Flop Labs Technocore açık log defterindeki gerçek zamanlı tahmin ve musluk hareketlerini izleyin.'}
           {activePortalTab === 'proves' && 'Merkeziyetsiz Ed25519 kriptografik imzalarıyla nelerin garanti edildiğini ve testnet sınırlarını inceleyin.'}
         </p>
@@ -813,7 +888,7 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Tahmin Defteri (Who has called it) */}
+              {/* Tahmin Defteri */}
               <div className="p-6 rounded-2xl bg-[#0c0f17] border border-zinc-800 shadow-xl space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
@@ -1018,7 +1093,164 @@ export default function Home() {
       )}
 
       {/* ======================================================== */}
-      {/* 2. SEKME: AĞ RADARI */}
+      {/* 2. SEKME: AJAN PASAPORTU & GÜNLÜK GM SERİSİ */}
+      {/* ======================================================== */}
+      {activePortalTab === 'passport' && (
+        <section className="w-full max-w-4xl px-4 py-8 space-y-8">
+          {/* Günlük GM Kartı */}
+          <div className="p-6 rounded-3xl bg-gradient-to-r from-amber-500/10 via-[#0c0f17] to-[#0c0f17] border border-amber-500/40 shadow-2xl flex flex-wrap items-center justify-between gap-6">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-full bg-amber-400/20 text-amber-400 text-[10px] font-bold uppercase tracking-wider border border-amber-400/30">
+                  GÜNLÜK İMZALI YOKLAMA
+                </span>
+                <span className="flex items-center gap-1 text-xs font-bold text-white">
+                  <Flame className="w-4 h-4 text-orange-500 fill-orange-500 animate-pulse" />
+                  {gmStreak} Günlük Seri
+                </span>
+              </div>
+              <h3 className="text-xl font-extrabold text-white">Günün İmzasını At (GM)</h3>
+              <p className="text-xs text-zinc-400 max-w-md">
+                Her gün siteye gelip Technocore açık odasına kriptografik imzanızı atın. Serinizi koruyun ve +250 kESCOBAR kazanın!
+              </p>
+            </div>
+
+            <button
+              onClick={handleClaimDailyGm}
+              disabled={hasClaimedGmToday}
+              className={`py-3.5 px-6 rounded-2xl font-bold text-xs flex items-center gap-2 transition-all shadow-xl active:scale-95 ${
+                hasClaimedGmToday
+                  ? 'bg-zinc-800 text-zinc-500 border border-zinc-700 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-black shadow-amber-500/20'
+              }`}
+            >
+              <Sparkles className="w-4 h-4" />
+              {hasClaimedGmToday ? 'Bugün İmzalandı ✓ (Yarın Gel)' : 'İmzala & +250 kESCOBAR Al'}
+            </button>
+          </div>
+
+          {/* Pasaport Kartı */}
+          <div className="p-8 rounded-3xl bg-[#0c0f17] border border-zinc-800 shadow-2xl space-y-6 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-96 h-96 bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
+
+            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800/80 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-amber-400/10 border border-amber-400/30 flex items-center justify-center font-black text-amber-400 text-xl font-mono">
+                  TC
+                </div>
+                <div>
+                  <h3 className="text-lg font-extrabold text-white tracking-tight">Technocore Ajan Pasaportu</h3>
+                  <p className="text-xs text-zinc-500 font-mono">Flop Labs Protokol Kimlik Tescili</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  DOĞRULANMIŞ AJAN
+                </span>
+              </div>
+            </div>
+
+            {/* Pasaport Gövdesi */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="p-4 rounded-2xl bg-zinc-950/70 border border-zinc-800/80 space-y-1">
+                <span className="text-[10px] text-zinc-500 uppercase font-mono block">AİRDROP SKORU</span>
+                <div className="text-3xl font-extrabold text-amber-400 font-mono">
+                  {airdropScore} <span className="text-xs text-zinc-500">/ 100</span>
+                </div>
+                <div className="w-full bg-zinc-900 h-1.5 rounded-full overflow-hidden mt-2">
+                  <div className="bg-amber-400 h-full transition-all" style={{ width: `${airdropScore}%` }} />
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-zinc-950/70 border border-zinc-800/80 space-y-1">
+                <span className="text-[10px] text-zinc-500 uppercase font-mono block">AJAN RÜTBESİ</span>
+                <div className="text-lg font-bold text-white truncate">
+                  {agentRankTitle}
+                </div>
+                <p className="text-[11px] text-zinc-400 font-mono mt-1">
+                  {myTotalVotes} Tahmin İmzası
+                </p>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-zinc-950/70 border border-zinc-800/80 space-y-1">
+                <span className="text-[10px] text-zinc-500 uppercase font-mono block">AKTİF GÜNLÜK SERİ</span>
+                <div className="text-2xl font-extrabold text-white flex items-center gap-1.5">
+                  <Flame className="w-5 h-5 text-orange-500 fill-orange-500" />
+                  {gmStreak} Gün
+                </div>
+                <p className="text-[11px] text-emerald-400 font-mono mt-1">
+                  +{gmStreak * 250} kESCOBAR Kazanıldı
+                </p>
+              </div>
+            </div>
+
+            {/* Detay Satırları */}
+            <div className="p-4 rounded-2xl bg-zinc-950/40 border border-zinc-800/60 space-y-2.5 text-xs font-mono">
+              <div className="flex justify-between items-center">
+                <span className="text-zinc-500">DID Adresi:</span>
+                <span className="text-amber-300 font-bold truncate max-w-[280px]">{did}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-zinc-500">Ağ Protokolü:</span>
+                <span className="text-zinc-300">Flop Labs Technocore Ed25519</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-zinc-500">Tescilli Oda:</span>
+                <span className="text-cyan-400">turkce-koprusu</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-zinc-500">Kullanılabilir Bakiye:</span>
+                <span className="text-white font-bold">{balance.toLocaleString()} kESCOBAR</span>
+              </div>
+            </div>
+
+            {/* Rozetler */}
+            <div>
+              <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider block mb-3">
+                Kazanılan Protokol Rozetleri
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center gap-2.5">
+                  <Award className="w-5 h-5 text-amber-400 shrink-0" />
+                  <div>
+                    <h4 className="text-xs font-bold text-white">Erken Kaşif</h4>
+                    <p className="text-[10px] text-zinc-500">Technocore testnetine katıldı</p>
+                  </div>
+                </div>
+
+                <div className={`p-3 rounded-xl border flex items-center gap-2.5 ${
+                  myTotalVotes >= 3 
+                    ? 'bg-zinc-950 border-emerald-500/40 text-white' 
+                    : 'bg-zinc-950/40 border-zinc-900 text-zinc-600'
+                }`}>
+                  <Sparkles className={`w-5 h-5 shrink-0 ${myTotalVotes >= 3 ? 'text-emerald-400' : 'text-zinc-600'}`} />
+                  <div>
+                    <h4 className="text-xs font-bold">Usta Tahminci</h4>
+                    <p className="text-[10px]">{myTotalVotes >= 3 ? 'Kazanıldı ✓' : '3 Tahmin Yap'}</p>
+                  </div>
+                </div>
+
+                <div className={`p-3 rounded-xl border flex items-center gap-2.5 ${
+                  gmStreak >= 3 
+                    ? 'bg-zinc-950 border-orange-500/40 text-white' 
+                    : 'bg-zinc-950/40 border-zinc-900 text-zinc-600'
+                }`}>
+                  <Flame className={`w-5 h-5 shrink-0 ${gmStreak >= 3 ? 'text-orange-500 fill-orange-500' : 'text-zinc-600'}`} />
+                  <div>
+                    <h4 className="text-xs font-bold">Seri Muhafızı</h4>
+                    <p className="text-[10px]">{gmStreak >= 3 ? 'Kazanıldı ✓' : '3 Gün Üst Üste Gel'}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ======================================================== */}
+      {/* 3. SEKME: AĞ RADARI */}
       {/* ======================================================== */}
       {activePortalTab === 'radar' && (
         <section className="w-full max-w-6xl px-4 py-8 space-y-6">
@@ -1029,7 +1261,7 @@ export default function Home() {
                 Ağda Son Görülenler (Technocore Canlı Log Defteri)
               </h3>
               <p className="text-xs text-zinc-500 font-mono mt-0.5">
-                Technocore turkce-koprusu açık odasındaki canlı tahmin ve musluk akışı
+                Technocore turkce-koprusu açık odasındaki canlı tahmin, musluk ve GM akışı
               </p>
             </div>
           </div>
@@ -1079,7 +1311,7 @@ export default function Home() {
       )}
 
       {/* ======================================================== */}
-      {/* 3. SEKME: PROTOKOL ŞEFFAFLIĞI */}
+      {/* 4. SEKME: PROTOKOL ŞEFFAFLIĞI */}
       {/* ======================================================== */}
       {activePortalTab === 'proves' && (
         <section className="w-full max-w-5xl px-4 py-8 space-y-6">
