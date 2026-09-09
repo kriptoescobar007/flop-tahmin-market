@@ -1,15 +1,12 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { MARKETS, Market } from './data/markets';
+import { MARKETS } from './data/markets';
 import { 
-  CheckCircle2, 
-  XCircle, 
   Coins, 
   Copy, 
   Check, 
   Lock, 
-  Sparkles, 
   Terminal, 
   ArrowUpRight, 
   Youtube, 
@@ -18,9 +15,6 @@ import {
   Download,
   Upload,
   KeyRound,
-  ShieldCheck,
-  TrendingUp,
-  Clock,
   Layers
 } from 'lucide-react';
 
@@ -49,7 +43,7 @@ export default function Home() {
   const [copiedKey, setCopiedKey] = useState(false);
   const [copiedDid, setCopiedDid] = useState(false);
 
-  // Technocore Veri State'leri
+  // Technocore Canlı Veri State'leri
   const [parsedCalls, setParsedCalls] = useState<ParsedCall[]>([]);
   const [recentFeed, setRecentFeed] = useState<ParsedCall[]>([]);
   const [leaderboardTab, setLeaderboardTab] = useState<'biggest' | 'recent'>('biggest');
@@ -81,7 +75,7 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [selectedMarketId]);
 
-  // 2. Technocore Odasından Verileri Çek ve Çözümle
+  // 2. Technocore Odasından Veri Çekme
   const fetchTechnocoreLogs = async () => {
     setIsLoadingLogs(true);
     try {
@@ -166,7 +160,7 @@ export default function Home() {
     setParsedCalls(sorted);
   };
 
-  // Dinamik Metrik Hesaplamaları
+  // Metrik Hesaplamaları
   const totalMarketPool = parsedCalls.reduce((acc, c) => acc + c.amount, activeMarket.initialYes + activeMarket.initialNo);
   const yesPool = parsedCalls.filter(c => c.side === 'yes').reduce((acc, c) => acc + c.amount, activeMarket.initialYes);
   const noPool = totalMarketPool - yesPool;
@@ -176,7 +170,7 @@ export default function Home() {
   const noMultiplier = (totalMarketPool / noPool).toFixed(2);
   const totalParticipants = parsedCalls.length + 43;
 
-  // Yeni Kimlik Üret
+  // Yeni Kimlik
   const handleGenerateNewIdentity = () => {
     const newKey = 'ed25519_sk_' + Array.from({length: 32}, () => Math.floor(Math.random()*16).toString(16)).join('');
     const newDid = 'did:key:z6Mk' + Math.random().toString(36).substring(2, 12) + Math.random().toString(36).substring(2, 12);
@@ -184,10 +178,10 @@ export default function Home() {
     setDid(newDid);
     localStorage.setItem('kescobar_key', newKey);
     localStorage.setItem('kescobar_did', newDid);
-    notify('success', 'Yeni Technocore kimliği ve Ed25519 anahtar çifti oluşturuldu.');
+    notify('success', 'Yeni Technocore kimliği yerel olarak oluşturuldu.');
   };
 
-  // Anahtar Metni ile Yükle
+  // Anahtar Yükle
   const handleImportKey = () => {
     if (!inputKey.trim() || inputKey.length < 10) {
       notify('error', 'Lütfen geçerli bir Ed25519 özel anahtarı girin.');
@@ -201,7 +195,7 @@ export default function Home() {
     notify('success', 'Technocore kimliği başarıyla yüklendi!');
   };
 
-  // JSON Dosyası Yükle (Import)
+  // JSON Dosyası Yükle
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -219,18 +213,18 @@ export default function Home() {
             setBalance(json.balance);
             localStorage.setItem('kescobar_balance', json.balance.toString());
           }
-          notify('success', 'Yedek JSON kimlik dosyası başarıyla içeri aktarıldı.');
+          notify('success', 'Yedek JSON kimlik dosyası başarıyla yüklendi.');
         } else {
-          notify('error', 'Geçersiz kimlik dosyası. privateKey ve did alanları bulunamadı.');
+          notify('error', 'Geçersiz kimlik dosyası.');
         }
       } catch (err) {
-        notify('error', 'JSON dosyası okunurken hata oluştu.');
+        notify('error', 'Dosya okunurken hata oluştu.');
       }
     };
     reader.readAsText(file);
   };
 
-  // Kimlik Dosyasını İndir (.json Export)
+  // JSON Dosyası İndir
   const handleDownloadBackup = () => {
     const backupData = {
       app: 'KriptoEscobar Flop Technocore Tahmin Piyasası',
@@ -248,7 +242,7 @@ export default function Home() {
     a.download = `kriptoescobar_kimlik_${did.slice(-8)}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    notify('success', 'Kimlik yedek dosyanız (.json) başarıyla indirildi.');
+    notify('success', 'Kimlik yedek dosyanız (.json) indirildi.');
   };
 
   // Musluk (Faucet)
@@ -273,10 +267,10 @@ export default function Home() {
       });
     } catch (_) {}
 
-    notify('success', '1.000 kESCOBAR bakiyeniz tanımlandı ve Technocore ağına işlendi!');
+    notify('success', '1.000 kESCOBAR cüzdanınıza tanımlandı!');
   };
 
-  // Tahmin Gönder (Make Your Call)
+  // Tahmin Gönder
   const handlePlaceCall = async () => {
     if (balance < betAmount) {
       notify('error', 'Yetersiz kESCOBAR! Sağdaki panelden 1.000 kESCOBAR talep edin.');
@@ -306,10 +300,10 @@ export default function Home() {
       setBalance(newBal);
       localStorage.setItem('kescobar_balance', newBal.toString());
 
-      notify('success', `Tebrikler! ${betAmount} kESCOBAR "${selectedSide === 'yes' ? 'EVET' : 'HAYIR'}" tahmininiz Technocore açık odasına kaydedildi.`);
+      notify('success', `Tebrikler! ${betAmount} kESCOBAR "${selectedSide === 'yes' ? 'EVET' : 'HAYIR'}" tahmininiz açık odaya kaydedildi.`);
       setTimeout(fetchTechnocoreLogs, 1500);
     } catch (e) {
-      notify('error', 'Odaya bağlanırken bir sorun oluştu.');
+      notify('error', 'Odaya bağlanırken hata oluştu.');
     } finally {
       setIsSubmitting(false);
     }
@@ -337,13 +331,16 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-[#07090e] text-zinc-100 flex flex-col items-center selection:bg-amber-400 selection:text-black">
-      {/* Üst Menü */}
+      {/* Üst Menü (Gerçek Kripto Escobar Logolu) */}
       <header className="w-full border-b border-zinc-800/80 bg-[#0d1017]/90 backdrop-blur sticky top-0 z-40">
-        <div className="max-w-6xl mx-auto px-4 py-3.5 flex flex-wrap items-center justify-between gap-4">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-amber-400 flex items-center justify-center font-black text-black text-xl shadow-lg shadow-amber-500/20">
-              E
-            </div>
+            {/* Altın Çerçeveli Orijinal Logo */}
+            <img
+              src="https://github.com/kriptoescobar007.png"
+              alt="Kripto Escobar"
+              className="h-10 w-10 rounded-full border-2 border-amber-400/80 shadow-lg shadow-amber-500/25 object-cover shrink-0"
+            />
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-extrabold text-sm tracking-tight text-white">KriptoEscobar</span>
@@ -395,7 +392,7 @@ export default function Home() {
         </p>
       </section>
 
-      {/* 1. KATMAN: KAPSAMLI KİMLİK & GİRİŞ MODÜLÜ (İlk Sitemizin Birebir Tasarımı) */}
+      {/* 1. KATMAN: KAPSAMLI KİMLİK & GİRİŞ MODÜLÜ */}
       <section className="w-full max-w-6xl px-4 mb-8">
         <div className="p-6 rounded-3xl bg-[#0c0f17] border border-zinc-800 shadow-2xl space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800/80 pb-3">
@@ -406,7 +403,6 @@ export default function Home() {
             <span className="text-[11px] text-zinc-500 font-mono">Ed25519 Kriptografik İmza</span>
           </div>
 
-          {/* Sekmeler: Yeni Kimlik / Yedekten Yükle / Kimliği Güvenle Sakla */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
             <button
               onClick={() => setAuthTab('create')}
@@ -443,7 +439,6 @@ export default function Home() {
             </button>
           </div>
 
-          {/* 1. Sekme İçeriği: Yeni Kimlik */}
           {authTab === 'create' && (
             <div className="p-4 rounded-2xl bg-zinc-950/70 border border-zinc-800/80 space-y-3">
               <p className="text-xs text-zinc-400 leading-relaxed">
@@ -470,7 +465,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* 2. Sekme İçeriği: Yedekten Yükle */}
           {authTab === 'import' && (
             <div className="p-4 rounded-2xl bg-zinc-950/70 border border-zinc-800/80 space-y-4">
               <div>
@@ -515,7 +509,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* 3. Sekme İçeriği: Kimliği Güvenle Sakla (.json İndir) */}
           {authTab === 'backup' && (
             <div className="p-4 rounded-2xl bg-zinc-950/70 border border-zinc-800/80 space-y-3">
               <p className="text-xs text-zinc-400 leading-relaxed">
@@ -545,7 +538,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 2. KATMAN: YENİ NESİL 5 PAZAR SEÇİCİ (MODERN KART IZGARASI) */}
+      {/* 2. KATMAN: 5 PAZAR SEÇİCİ */}
       <section className="w-full max-w-6xl px-4 mb-8">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2 text-xs font-bold text-zinc-300">
@@ -614,17 +607,15 @@ export default function Home() {
         </div>
       )}
 
-      {/* 3. KATMAN: PRANJAL MİMARİSİ (SOL ANALİZ VİTRİNİ & SAĞ TAHMİN PANELİ) */}
+      {/* 3. KATMAN: ANALİZ VİTRİNİ & TAHMİN PANELİ */}
       <main className="w-full max-w-6xl px-4 pb-12 grid grid-cols-1 lg:grid-cols-12 gap-8">
         
-        {/* SOL BÖLÜM (8 Kolon): Büyük Tahmin Vitrini & İstatistikler */}
+        {/* SOL BÖLÜM: Vitrin & İstatistikler */}
         <div className="lg:col-span-8 space-y-6">
-          
           <h2 className="text-2xl md:text-3xl font-black text-white leading-tight">
             {activeMarket.title}
           </h2>
 
-          {/* BÜYÜK SAYILAR VE ÇEMBER ORAN KARTI */}
           <div className="p-6 rounded-3xl bg-[#0c0f17] border border-zinc-800/90 grid grid-cols-1 md:grid-cols-12 gap-6 items-center shadow-2xl relative overflow-hidden">
             <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
 
@@ -683,7 +674,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Protokol Bilgi Şeritleri */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-zinc-400 pt-1">
             <div className="p-3 rounded-xl bg-[#0c0f17] border border-zinc-800/60 flex items-center gap-3">
               <Lock className="w-4 h-4 text-amber-400 shrink-0" />
@@ -708,7 +698,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Sayaç Çubuğu */}
           <div className="p-4 rounded-2xl bg-[#0c0f17] border border-zinc-800 flex flex-wrap items-center justify-between gap-4 text-xs font-mono">
             <div>
               <span className="text-zinc-500 text-[10px] block">VADE TARİHİ</span>
@@ -731,7 +720,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Canlı Akış Şeridi */}
           <div className="p-3 rounded-xl bg-zinc-950/80 border border-zinc-800/80 overflow-x-auto flex items-center gap-4 text-xs font-mono scrollbar-none">
             <span className="px-2 py-0.5 rounded bg-amber-400/10 text-amber-400 font-black text-[10px] whitespace-nowrap">
               • CANLI AKIŞ
@@ -753,7 +741,6 @@ export default function Home() {
             )}
           </div>
 
-          {/* Tahmin Yapanlar Defteri */}
           <div className="p-6 rounded-3xl bg-[#0c0f17] border border-zinc-800 shadow-xl space-y-4">
             <div className="flex items-center justify-between">
               <div>
@@ -825,7 +812,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* SAĞ BÖLÜM (4 Kolon): PRANJAL TARZI HAMLE YAPMA PANELİ */}
+        {/* SAĞ BÖLÜM: Tahmin Paneli */}
         <div className="lg:col-span-4 space-y-6">
           <div className="p-6 rounded-3xl bg-[#0c0f17] border border-amber-500/40 shadow-2xl sticky top-20 space-y-6">
             
@@ -839,7 +826,7 @@ export default function Home() {
               </span>
             </div>
 
-            {/* ADIM 1: BAKİYENİ AL */}
+            {/* 1. ADIM */}
             <div className="space-y-2">
               <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block">
                 1. kESCOBAR BAKİYENİ AL
@@ -861,7 +848,7 @@ export default function Home() {
               </div>
             </div>
 
-            {/* ADIM 2: TERCİHİNİ SEÇ */}
+            {/* 2. ADIM */}
             <div className="space-y-2">
               <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block">
                 2. TERCİHİNİ SEÇ
@@ -892,7 +879,7 @@ export default function Home() {
               </div>
             </div>
 
-            {/* ADIM 3: MİKTAR BELİRLE */}
+            {/* 3. ADIM */}
             <div className="space-y-2">
               <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block">
                 3. MİKTAR BELİRLE
@@ -924,7 +911,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* OY VERME BUTONU */}
             <button
               disabled={isSubmitting}
               onClick={handlePlaceCall}
@@ -943,7 +929,6 @@ export default function Home() {
               )}
             </button>
 
-            {/* Odaya Git Linki */}
             <div className="pt-2 border-t border-zinc-800/80 text-center">
               <a
                 href="https://technocore.chat/r/turkce-koprusu"
@@ -958,7 +943,6 @@ export default function Home() {
         </div>
       </main>
 
-      {/* Footer */}
       <footer className="w-full max-w-6xl px-4 py-8 border-t border-zinc-800/80 text-center text-xs text-zinc-500 mt-6 font-mono">
         <p>© 2026 Kripto Escobar • Flop Labs Technocore Tahmin Piyasası. Açık protokol tabanlıdır.</p>
         <p className="mt-1 text-[11px]">kESCOBAR testnet puanlarının maddi değeri yoktur.</p>
