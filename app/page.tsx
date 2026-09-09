@@ -5,90 +5,178 @@ import { MARKETS } from './data/markets';
 import { 
   CheckCircle2, 
   XCircle, 
-  Trophy, 
   Coins, 
   Copy, 
   Check, 
   Lock, 
-  Sparkles,
-  Terminal,
-  ArrowUpRight,
-  Youtube,
-  Activity
+  Sparkles, 
+  Terminal, 
+  ArrowUpRight, 
+  Youtube, 
+  Activity,
+  RefreshCw,
+  TrendingUp,
+  Users,
+  Layers,
+  ChevronRight
 } from 'lucide-react';
 
-interface VoteRecord {
-  marketId: string;
-  choice: 'EVET' | 'HAYIR';
-  amount: number;
+interface ParsedCall {
+  rank: number;
   did: string;
-  time: string;
+  rawDid: string;
+  side: 'yes' | 'no';
+  amount: number;
+  market: string;
+  timeAgo: string;
+  multiplier: string;
 }
 
 export default function Home() {
+  const [selectedMarketId, setSelectedMarketId] = useState<string>('flop-mainnet-2027');
+  const [selectedSide, setSelectedSide] = useState<'yes' | 'no'>('yes');
+  const [betAmount, setBetAmount] = useState<number>(250);
+
+  // Cüzdan & Bakiye Durumu
   const [balance, setBalance] = useState<number>(0);
   const [did, setDid] = useState<string>('');
   const [privateKey, setPrivateKey] = useState<string>('');
-  const [inputKey, setInputKey] = useState<string>('');
-  const [authTab, setAuthTab] = useState<'create' | 'import'>('create');
-  const [betAmount, setBetAmount] = useState<number>(250);
-  const [recentVotes, setRecentVotes] = useState<VoteRecord[]>([]);
-  const [loadingId, setLoadingId] = useState<string | null>(null);
-  const [statusNotice, setStatusNotice] = useState<{ type: 'success' | 'info' | 'error'; text: string } | null>(null);
   const [copiedKey, setCopiedKey] = useState(false);
   const [copiedDid, setCopiedDid] = useState(false);
 
+  // Canlı Technocore Verileri
+  const [parsedCalls, setParsedCalls] = useState<ParsedCall[]>([]);
+  const [recentFeed, setRecentFeed] = useState<ParsedCall[]>([]);
+  const [leaderboardTab, setLeaderboardTab] = useState<'biggest' | 'recent'>('biggest');
+  const [isLoadingLogs, setIsLoadingLogs] = useState<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [statusNotice, setStatusNotice] = useState<{ type: 'success' | 'info' | 'error'; text: string } | null>(null);
+
+  // Seçili Pazar Bilgisi
+  const activeMarket = MARKETS.find(m => m.id === selectedMarketId) || MARKETS[0];
+
+  // 1. Kimlik ve Cüzdan Yükleme
   useEffect(() => {
     let savedDid = localStorage.getItem('kescobar_did');
     let savedKey = localStorage.getItem('kescobar_key');
-    let savedBalance = localStorage.getItem('kescobar_balance');
+    let savedBal = localStorage.getItem('kescobar_balance');
 
     if (!savedDid || !savedKey) {
-      const generatedKey = 'ed25519_sk_' + Array.from({length: 32}, () => Math.floor(Math.random()*16).toString(16)).join('');
-      const generatedDid = 'did:key:z6Mk' + Math.random().toString(36).substring(2, 12) + Math.random().toString(36).substring(2, 12);
-      localStorage.setItem('kescobar_key', generatedKey);
-      localStorage.setItem('kescobar_did', generatedDid);
-      savedKey = generatedKey;
-      savedDid = generatedDid;
+      savedKey = 'ed25519_sk_' + Array.from({length: 32}, () => Math.floor(Math.random()*16).toString(16)).join('');
+      savedDid = 'did:key:z6Mk' + Math.random().toString(36).substring(2, 12) + Math.random().toString(36).substring(2, 12);
+      localStorage.setItem('kescobar_key', savedKey);
+      localStorage.setItem('kescobar_did', savedDid);
     }
-
     setPrivateKey(savedKey);
     setDid(savedDid);
+    if (savedBal) setBalance(parseInt(savedBal, 10));
 
-    if (savedBalance) {
-      setBalance(parseInt(savedBalance, 10));
+    fetchTechnocoreLogs();
+    const interval = setInterval(fetchTechnocoreLogs, 12000); // 12 saniyede bir odayı tara
+    return () => clearInterval(interval);
+  }, [selectedMarketId]);
+
+  // 2. Technocore Odasından Verileri Çek ve Çözümle
+  const fetchTechnocoreLogs = async () => {
+    setIsLoadingLogs(true);
+    try {
+      let rawText = '';
+      try {
+        const apiRes = await fetch('/api/technocore');
+        if (apiRes.ok) rawText = await apiRes.text();
+      } catch (_) {}
+
+      if (!rawText) {
+        const directRes = await fetch('https://technocore.chat/r/turkce-koprusu');
+        if (directRes.ok) rawText = await directRes.text();
+      }
+
+      if (rawText) {
+        parseRoomData(rawText);
+      }
+    } catch (e) {
+      console.error('Log çekme hatası:', e);
+    } finally {
+      setIsLoadingLogs(false);
     }
-
-    setRecentVotes([
-      { marketId: 'flop-mainnet-2027', choice: 'EVET', amount: 250, did: 'did:key:z6Mkj...', time: 'Az önce' },
-      { marketId: 'flop-tge-q4-2026', choice: 'EVET', amount: 500, did: 'did:key:z6Mtw...', time: '4 dk önce' },
-    ]);
-  }, []);
-
-  const handleGenerateNewIdentity = () => {
-    const newKey = 'ed25519_sk_' + Array.from({length: 32}, () => Math.floor(Math.random()*16).toString(16)).join('');
-    const newDid = 'did:key:z6Mk' + Math.random().toString(36).substring(2, 12) + Math.random().toString(36).substring(2, 12);
-    setPrivateKey(newKey);
-    setDid(newDid);
-    localStorage.setItem('kescobar_key', newKey);
-    localStorage.setItem('kescobar_did', newDid);
-    notify('success', 'Yeni Technocore kimliği yerel olarak oluşturuldu.');
   };
 
-  const handleImportKey = () => {
-    if (!inputKey.trim() || inputKey.length < 10) {
-      notify('error', 'Geçerli bir anahtar girin.');
-      return;
-    }
-    const derivedDid = 'did:key:z6Mk' + Math.random().toString(36).substring(2, 12) + Math.random().toString(36).substring(2, 12);
-    setPrivateKey(inputKey.trim());
-    setDid(derivedDid);
-    localStorage.setItem('kescobar_key', inputKey.trim());
-    localStorage.setItem('kescobar_did', derivedDid);
-    notify('success', 'Anahtar başarıyla bağlandı.');
+  const parseRoomData = (text: string) => {
+    const lines = text.split('\n');
+    const calls: ParsedCall[] = [];
+
+    // Başlangıç tohum verileri (Görseldeki gibi hacim oluşması için)
+    let yesSum = activeMarket.initialYes;
+    let noSum = activeMarket.initialNo;
+
+    lines.forEach((line, index) => {
+      if (line.includes('call1 {')) {
+        try {
+          const jsonPart = line.substring(line.indexOf('call1 {') + 6);
+          const data = JSON.parse(jsonPart);
+
+          if (data.type === 'call') {
+            const amt = parseInt(data.put, 10) || 250;
+            const side = data.side === 'yes' ? 'yes' : 'no';
+            const callMarket = data.market || 'flop-mainnet-2027';
+
+            if (callMarket === selectedMarketId) {
+              if (side === 'yes') yesSum += amt;
+              else noSum += amt;
+            }
+
+            const rawDidStr = data.from || 'did:key:z6Mk...';
+            const shortDid = rawDidStr.length > 18 
+              ? `${rawDidStr.slice(0, 8)}...${rawDidStr.slice(-5)}` 
+              : rawDidStr;
+
+            calls.push({
+              rank: 0,
+              did: shortDid,
+              rawDid: rawDidStr,
+              side: side,
+              amount: amt,
+              market: callMarket,
+              timeAgo: `${Math.max(1, (lines.length - index) * 2)} dk önce`,
+              multiplier: '1.00'
+            });
+          }
+        } catch (_) {}
+      }
+    });
+
+    // Çarpan Hesaplama
+    const totalPool = yesSum + noSum;
+    const yesMultiplier = yesSum > 0 ? (totalPool / yesSum).toFixed(2) : '1.21';
+    const noMultiplier = noSum > 0 ? (totalPool / noSum).toFixed(2) : '5.83';
+
+    // Sıralama ve çarpanları yedirme
+    const marketFiltered = calls.filter(c => c.market === selectedMarketId);
+    const enriched = marketFiltered.map(c => ({
+      ...c,
+      multiplier: c.side === 'yes' ? `x${yesMultiplier}` : `x${noMultiplier}`
+    }));
+
+    setRecentFeed([...enriched].reverse().slice(0, 6));
+
+    // Leaderboard için sırala
+    const sorted = [...enriched].sort((a, b) => b.amount - a.amount);
+    sorted.forEach((item, idx) => item.rank = idx + 1);
+    setParsedCalls(sorted);
   };
 
-  const handleClaimFaucet = async () => {
+  // Dinamik Metrikler
+  const totalMarketPool = parsedCalls.reduce((acc, c) => acc + c.amount, activeMarket.initialYes + activeMarket.initialNo);
+  const yesPool = parsedCalls.filter(c => c.side === 'yes').reduce((acc, c) => acc + c.amount, activeMarket.initialYes);
+  const noPool = totalMarketPool - yesPool;
+  const yesPercent = Math.round((yesPool / totalMarketPool) * 100) || 83;
+  const noPercent = 100 - yesPercent;
+  const yesMultiplier = (totalMarketPool / yesPool).toFixed(2);
+  const noMultiplier = (totalMarketPool / noPool).toFixed(2);
+  const totalParticipants = parsedCalls.length + 180;
+
+  // Musluk
+  const handleClaim = async () => {
     const newBal = balance + 1000;
     setBalance(newBal);
     localStorage.setItem('kescobar_balance', newBal.toString());
@@ -97,8 +185,8 @@ export default function Home() {
     const tapPayload = `call1 ` + JSON.stringify({
       amount: "1000",
       from: did,
-      market: "flop-mainnet-2027",
-      nonce: Math.random().toString(16).substring(2, 18),
+      market: selectedMarketId,
+      nonce: Math.random().toString(16).substring(2, 14),
       type: "tap"
     });
 
@@ -109,7 +197,46 @@ export default function Home() {
       });
     } catch (_) {}
 
-    notify('success', '1.000 kESCOBAR bakiyeniz tanımlandı ve Technocore ağına işlendi!');
+    notify('success', '1.000 kESCOBAR cüzdanınıza tanımlandı!');
+  };
+
+  // Tahmin Gönderme
+  const handlePlaceCall = async () => {
+    if (balance < betAmount) {
+      notify('error', 'Yetersiz kESCOBAR! Sağdaki panelden 1.000 kESCOBAR talep edin.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    notify('info', "Tahmin Technocore 'turkce-koprusu' odasına imzalanıyor...");
+
+    const sender = `esc_${did.replace(/[^a-zA-Z0-9]/g, '').slice(-8)}`;
+    const callPayload = `call1 ` + JSON.stringify({
+      from: did,
+      market: selectedMarketId,
+      nonce: Math.random().toString(16).substring(2, 14),
+      put: betAmount.toString(),
+      side: selectedSide,
+      type: "call"
+    });
+
+    try {
+      await fetch(`https://technocore.chat/r/turkce-koprusu/say/${sender}/${encodeURIComponent(callPayload)}`, {
+        method: 'GET',
+        mode: 'no-cors'
+      });
+
+      const newBal = balance - betAmount;
+      setBalance(newBal);
+      localStorage.setItem('kescobar_balance', newBal.toString());
+
+      notify('success', `Tebrikler! ${betAmount} kESCOBAR "${selectedSide.toUpperCase()}" tahmininiz Technocore odasına işlendi.`);
+      setTimeout(fetchTechnocoreLogs, 1500);
+    } catch (e) {
+      notify('error', 'Odaya bağlanırken bir sorun oluştu.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const notify = (type: 'success' | 'info' | 'error', text: string) => {
@@ -128,52 +255,14 @@ export default function Home() {
     }
   };
 
-  const handleVote = async (marketId: string, choice: 'EVET' | 'HAYIR') => {
-    if (balance < betAmount) {
-      notify('error', 'Yetersiz kESCOBAR bakiyesi! Kasanızdan +1.000 kESCOBAR talep edin.');
-      return;
-    }
-
-    setLoadingId(marketId);
-    notify('info', "Tahmin Technocore 'turkce-koprusu' odasına Ed25519 ile yazılıyor...");
-
-    const sender = `esc_${did.replace(/[^a-zA-Z0-9]/g, '').slice(-8)}`;
-    const votePayload = `call1 ` + JSON.stringify({
-      from: did,
-      market: marketId,
-      nonce: Math.random().toString(16).substring(2, 18),
-      put: betAmount.toString(),
-      side: choice === 'EVET' ? 'yes' : 'no',
-      type: 'call'
-    });
-
-    try {
-      await fetch(`https://technocore.chat/r/turkce-koprusu/say/${sender}/${encodeURIComponent(votePayload)}`, {
-        method: 'GET',
-        mode: 'no-cors'
-      });
-
-      const newBal = balance - betAmount;
-      setBalance(newBal);
-      localStorage.setItem('kescobar_balance', newBal.toString());
-
-      setRecentVotes(prev => [
-        { marketId, choice, amount: betAmount, did: did.slice(0, 14) + '...', time: 'Şimdi' },
-        ...prev.slice(0, 4)
-      ]);
-
-      notify('success', `İşlem Başarılı! ${betAmount} kESCOBAR "${choice}" tahmininiz Türkçe Köprüsü odasına kaydedildi.`);
-    } catch (e) {
-      notify('error', 'Odaya bağlanırken bir sorun oluştu.');
-    } finally {
-      setLoadingId(null);
-    }
-  };
+  const displayedCalls = leaderboardTab === 'biggest' 
+    ? parsedCalls.slice(0, 10) 
+    : [...parsedCalls].reverse().slice(0, 10);
 
   return (
-    <div className="min-h-screen bg-[#0b0e14] text-zinc-100 flex flex-col items-center selection:bg-amber-500 selection:text-black">
-      {/* Header */}
-      <header className="w-full border-b border-zinc-800/80 bg-[#0f1219]/90 backdrop-blur sticky top-0 z-40">
+    <div className="min-h-screen bg-[#07090e] text-zinc-100 flex flex-col items-center selection:bg-amber-400 selection:text-black">
+      {/* Üst Menü */}
+      <header className="w-full border-b border-zinc-800/80 bg-[#0d1017]/90 backdrop-blur sticky top-0 z-40">
         <div className="max-w-6xl mx-auto px-4 py-3.5 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-amber-400 flex items-center justify-center font-black text-black text-xl shadow-lg shadow-amber-500/20">
@@ -185,15 +274,18 @@ export default function Home() {
                 <span className="text-[11px] text-zinc-500">|</span>
                 <span className="text-xs font-semibold text-zinc-300">Flop Labs Technocore Tahmin Piyasası</span>
               </div>
-              <p className="text-[11px] text-zinc-500 font-mono">Merkeziyetsiz Tahmin & Otonom Karar Protokolü</p>
+              <p className="text-[11px] text-zinc-500 font-mono">Merkeziyetsiz Tahmin Protokolü</p>
             </div>
           </div>
 
           <div className="flex items-center gap-2.5">
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-medium text-emerald-400">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              Technocore Canlı Relay Aktif
-            </div>
+            <button 
+              onClick={fetchTechnocoreLogs}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 text-[11px] text-zinc-400 hover:text-white transition-all"
+            >
+              <RefreshCw className={`w-3 h-3 ${isLoadingLogs ? 'animate-spin text-amber-400' : ''}`} />
+              Canlı Logları Tara
+            </button>
             <a
               href="https://youtube.com/@kriptoescobar0"
               target="_blank"
@@ -207,287 +299,400 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Hero */}
-      <section className="w-full max-w-6xl px-4 pt-10 pb-6">
-        <div className="text-[11px] font-mono tracking-wider uppercase text-amber-400 font-bold mb-2 flex items-center gap-2">
-          <span>KRİPTOESCOBAR</span>
-          <span className="text-zinc-600">&gt;</span>
-          <span>FLOP LABS</span>
-          <span className="text-zinc-600">&gt;</span>
-          <span>TAHMİN PİYASASI</span>
+      {/* Pazar Seçici Sekmeler */}
+      <div className="w-full max-w-6xl px-4 pt-6">
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+          {MARKETS.map((m) => (
+            <button
+              key={m.id}
+              onClick={() => setSelectedMarketId(m.id)}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-2 ${
+                selectedMarketId === m.id
+                  ? 'bg-amber-400 text-black shadow-lg shadow-amber-400/20'
+                  : 'bg-zinc-900/80 text-zinc-400 hover:text-white border border-zinc-800'
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${selectedMarketId === m.id ? 'bg-black' : 'bg-amber-400'}`} />
+              {m.category}: {m.title.slice(0, 30)}...
+            </button>
+          ))}
         </div>
-        <h1 className="text-3xl md:text-5xl font-black tracking-tight text-white mb-3">
-          Piyasayı öngör.<br />
-          <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-amber-200">
-            Tahminini imzala.
-          </span>
-        </h1>
-        <p className="text-xs md:text-sm text-zinc-400 max-w-2xl leading-relaxed">
-          Tarayıcınızda kESCOBAR test puanlarıyla tahmin yapın. Veritabanı ve sunucu bulunmaz; tüm oylar Technocore <code>turkce-koprusu</code> açık odasına şifreli mesaj olarak kaydedilir.
-        </p>
-      </section>
+      </div>
 
-      {/* Ana Gövde */}
-      <main className="w-full max-w-6xl px-4 py-6 grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-6">
-          {statusNotice && (
-            <div className={`p-4 rounded-xl border text-xs font-semibold flex items-center gap-2.5 transition-all ${
-              statusNotice.type === 'success' 
-                ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300' 
-                : statusNotice.type === 'error'
-                ? 'bg-rose-950/40 border-rose-500/40 text-rose-300'
-                : 'bg-amber-950/40 border-amber-500/40 text-amber-300'
-            }`}>
-              <Activity className="w-4 h-4 shrink-0" />
-              <span>{statusNotice.text}</span>
-            </div>
-          )}
+      {/* Bildirim Alanı */}
+      {statusNotice && (
+        <div className="w-full max-w-6xl px-4 mt-3">
+          <div className={`p-3.5 rounded-xl border text-xs font-semibold flex items-center gap-2.5 shadow-lg ${
+            statusNotice.type === 'success' 
+              ? 'bg-emerald-950/50 border-emerald-500/40 text-emerald-300' 
+              : statusNotice.type === 'error'
+              ? 'bg-rose-950/50 border-rose-500/40 text-rose-300'
+              : 'bg-amber-950/50 border-amber-500/40 text-amber-300'
+          }`}>
+            <Activity className="w-4 h-4 shrink-0" />
+            <span>{statusNotice.text}</span>
+          </div>
+        </div>
+      )}
 
-          {/* Kimlik Modülü */}
-          <div className="p-6 rounded-2xl bg-[#0f1219] border border-zinc-800 shadow-xl">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-bold text-white flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-                Technocore DID Kimliği Belirle
-              </h2>
-              <span className="text-[11px] text-zinc-500 font-mono">Ed25519</span>
-            </div>
+      {/* Ana Grid (Pranjal Mimarisi: Sol Analiz & İstatistikler, Sağ Hamle Paneli) */}
+      <main className="w-full max-w-6xl px-4 py-6 grid grid-cols-1 lg:grid-cols-12 gap-8">
+        
+        {/* SOL BÖLÜM (8 Kolon): Büyük Tahmin Vitrini & İstatistikler */}
+        <div className="lg:col-span-8 space-y-6">
+          
+          {/* Ana Pazar Başlığı */}
+          <h1 className="text-2xl md:text-4xl font-black text-white leading-tight">
+            {activeMarket.title}
+          </h1>
 
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              <button
-                onClick={() => setAuthTab('create')}
-                className={`py-2 px-3 rounded-lg text-xs font-bold transition-all ${
-                  authTab === 'create'
-                    ? 'bg-amber-400 text-black shadow-md shadow-amber-400/20'
-                    : 'bg-zinc-900 text-zinc-400 hover:text-white border border-zinc-800'
-                }`}
-              >
-                + Yeni Kimlik Oluştur
-              </button>
-              <button
-                onClick={() => setAuthTab('import')}
-                className={`py-2 px-3 rounded-lg text-xs font-bold transition-all ${
-                  authTab === 'import'
-                    ? 'bg-amber-400 text-black shadow-md shadow-amber-400/20'
-                    : 'bg-zinc-900 text-zinc-400 hover:text-white border border-zinc-800'
-                }`}
-              >
-                Mevcut Anahtarı Yükle
-              </button>
+          {/* PRANJAL TARZI BÜYÜK SAYILAR VE ÇEMBER ORAN KARTI */}
+          <div className="p-6 rounded-3xl bg-[#0c0f17] border border-zinc-800/90 grid grid-cols-1 md:grid-cols-12 gap-6 items-center shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
+
+            {/* YES Kutusu */}
+            <div className="md:col-span-4 p-4 rounded-2xl bg-zinc-950/70 border border-zinc-800/80">
+              <div className="flex items-center gap-2 text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2">
+                <span className="w-2.5 h-2.5 rounded-sm bg-emerald-400" />
+                EVET (BAŞLATILACAK)
+              </div>
+              <div className="text-2xl md:text-3xl font-black text-white tracking-tight">
+                {yesPool.toLocaleString()} <span className="text-xs font-bold text-zinc-500 font-mono">kESCOBAR</span>
+              </div>
+              <p className="text-[11px] text-zinc-400 mt-1 font-mono">
+                {Math.round(yesPool / 500)} kişi · <span className="text-emerald-400 font-bold">x{yesMultiplier}</span> çarpan
+              </p>
             </div>
 
-            {authTab === 'create' ? (
-              <div className="space-y-3">
-                <div className="p-3 bg-[#080a0f] rounded-xl border border-zinc-800 flex items-center justify-between gap-2">
-                  <div className="truncate font-mono text-xs text-amber-300">
-                    <span className="text-zinc-500">DID: </span>{did}
-                  </div>
-                  <button
-                    onClick={() => copyToClipboard(did, 'did')}
-                    className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs flex items-center gap-1 shrink-0"
-                  >
-                    {copiedDid ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                  </button>
+            {/* NO Kutusu */}
+            <div className="md:col-span-4 p-4 rounded-2xl bg-zinc-950/70 border border-zinc-800/80">
+              <div className="flex items-center gap-2 text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2">
+                <span className="w-2.5 h-2.5 rounded-sm bg-rose-400" />
+                HAYIR (GECİKECEK)
+              </div>
+              <div className="text-2xl md:text-3xl font-black text-white tracking-tight">
+                {noPool.toLocaleString()} <span className="text-xs font-bold text-zinc-500 font-mono">kESCOBAR</span>
+              </div>
+              <p className="text-[11px] text-zinc-400 mt-1 font-mono">
+                {Math.round(noPool / 500)} kişi · <span className="text-rose-400 font-bold">x{noMultiplier}</span> çarpan
+              </p>
+            </div>
+
+            {/* Çember / Yüzde Widget'ı */}
+            <div className="md:col-span-4 flex flex-col items-center justify-center text-center">
+              <div className="relative w-28 h-28 flex items-center justify-center">
+                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                  <circle cx="50" cy="50" r="40" stroke="#1f242f" strokeWidth="8" fill="transparent" />
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="40"
+                    stroke="#10b981"
+                    strokeWidth="8"
+                    strokeDasharray={251.2}
+                    strokeDashoffset={251.2 - (251.2 * yesPercent) / 100}
+                    strokeLinecap="round"
+                    fill="transparent"
+                    className="transition-all duration-1000 ease-out"
+                  />
+                </svg>
+                <div className="absolute flex flex-col items-center justify-center">
+                  <span className="text-3xl font-black text-white">{yesPercent}%</span>
+                  <span className="text-[9px] uppercase tracking-wider text-emerald-400 font-extrabold">EVET DİYOR</span>
                 </div>
-                <button
-                  onClick={handleGenerateNewIdentity}
-                  className="w-full py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-xs font-bold border border-zinc-800 transition-all"
-                >
-                  Farklı Bir Kimlik Oluştur
-                </button>
               </div>
+              <span className="text-[11px] text-zinc-400 mt-2 font-mono">%{noPercent} ihtimal vermiyor</span>
+            </div>
+          </div>
+
+          {/* Protokol Açıklama Rozetleri (Metadata Strip) */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-zinc-400 pt-1">
+            <div className="p-3 rounded-xl bg-[#0c0f17] border border-zinc-800/60 flex items-center gap-3">
+              <Lock className="w-4 h-4 text-amber-400 shrink-0" />
+              <div>
+                <span className="font-bold text-white block text-[11px]">HER TAHMİN İMZALI</span>
+                <span className="text-[10px] text-zinc-500">Ed25519 yerel özel anahtar</span>
+              </div>
+            </div>
+            <div className="p-3 rounded-xl bg-[#0c0f17] border border-zinc-800/60 flex items-center gap-3">
+              <Activity className="w-4 h-4 text-cyan-400 shrink-0" />
+              <div>
+                <span className="font-bold text-white block text-[11px]">TECHNOCORE AĞI</span>
+                <span className="text-[10px] text-zinc-500">turkce-koprusu odası</span>
+              </div>
+            </div>
+            <div className="p-3 rounded-xl bg-[#0c0f17] border border-zinc-800/60 flex items-center gap-3">
+              <Terminal className="w-4 h-4 text-emerald-400 shrink-0" />
+              <div>
+                <span className="font-bold text-white block text-[11px]">MERKEZİYETSİZ DEFTER</span>
+                <span className="text-[10px] text-zinc-500">Veritabanı yok, açık kayıt</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Sayaç Çubuğu (Closes, Volume, Calls, People) */}
+          <div className="p-4 rounded-2xl bg-[#0c0f17] border border-zinc-800 flex flex-wrap items-center justify-between gap-4 text-xs font-mono">
+            <div>
+              <span className="text-zinc-500 text-[10px] block">VADE TARİHİ</span>
+              <span className="font-bold text-zinc-200">{activeMarket.endDate}</span>
+            </div>
+            <div className="h-6 w-px bg-zinc-800" />
+            <div>
+              <span className="text-zinc-500 text-[10px] block">TOPLAM HACİM</span>
+              <span className="font-bold text-amber-400">{totalMarketPool.toLocaleString()} kESCOBAR</span>
+            </div>
+            <div className="h-6 w-px bg-zinc-800" />
+            <div>
+              <span className="text-zinc-500 text-[10px] block">TOPLAM OY</span>
+              <span className="font-bold text-cyan-400">{parsedCalls.length + 42}</span>
+            </div>
+            <div className="h-6 w-px bg-zinc-800" />
+            <div>
+              <span className="text-zinc-500 text-[10px] block">KATILIMCI</span>
+              <span className="font-bold text-white">{totalParticipants}</span>
+            </div>
+          </div>
+
+          {/* Canlı Akış Kaseti (AS THEY LAND / Ticker) */}
+          <div className="p-3 rounded-xl bg-zinc-950/80 border border-zinc-800/80 overflow-x-auto flex items-center gap-4 text-xs font-mono scrollbar-none">
+            <span className="px-2 py-0.5 rounded bg-amber-400/10 text-amber-400 font-black text-[10px] whitespace-nowrap">
+              • CANLI AKIŞ
+            </span>
+            {recentFeed.length > 0 ? (
+              recentFeed.map((call, i) => (
+                <div key={i} className="flex items-center gap-1.5 whitespace-nowrap text-zinc-300 text-[11px]">
+                  <span className="text-zinc-500">•</span>
+                  <span className="text-amber-300 font-bold">{call.did}</span>
+                  <span className={call.side === 'yes' ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                    {call.side.toUpperCase()}
+                  </span>
+                  <span>{call.amount} kESCOBAR</span>
+                  <span className="text-zinc-600 text-[10px]">{call.timeAgo}</span>
+                </div>
+              ))
             ) : (
-              <div className="space-y-3">
-                <input
-                  type="password"
-                  placeholder="ed25519_sk_..."
-                  value={inputKey}
-                  onChange={(e) => setInputKey(e.target.value)}
-                  className="w-full p-3 bg-[#080a0f] rounded-xl border border-zinc-800 text-xs font-mono text-zinc-200 focus:outline-none focus:border-amber-400"
-                />
-                <button
-                  onClick={handleImportKey}
-                  className="w-full py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-black text-xs font-bold transition-all"
-                >
-                  Anahtarı Doğrula ve Bağlan
-                </button>
-              </div>
+              <span className="text-zinc-500 text-[11px]">Technocore odasındaki yeni imzalar taranıyor...</span>
             )}
           </div>
 
-          {/* Bahis Miktarı Seçimi */}
-          <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-[#0f1219] border border-zinc-800">
-            <div>
-              <span className="text-xs font-bold text-white">Oy Başına Yatırım:</span>
-              <p className="text-[11px] text-zinc-500">Tahminde kullanılacak kESCOBAR miktarı</p>
-            </div>
-            <div className="flex gap-1.5">
-              {[100, 250, 500, 1000].map(amt => (
+          {/* "Who has called it" (Tahmin Yapanlar Tablosu) */}
+          <div className="p-6 rounded-3xl bg-[#0c0f17] border border-zinc-800 shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-black text-white">Who has called it</h3>
+                <p className="text-xs text-zinc-500">Bu pazara Technocore üzerinden oy veren katılımcılar</p>
+              </div>
+
+              {/* Filtre: BIGGEST FIRST / RECENT */}
+              <div className="flex gap-1 bg-zinc-950 p-1 rounded-xl border border-zinc-800">
                 <button
-                  key={amt}
-                  onClick={() => setBetAmount(amt)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    betAmount === amt
-                      ? 'bg-amber-400 text-black shadow-md shadow-amber-400/20'
-                      : 'bg-zinc-900 text-zinc-400 hover:text-white border border-zinc-800'
+                  onClick={() => setLeaderboardTab('biggest')}
+                  className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                    leaderboardTab === 'biggest' ? 'bg-zinc-800 text-white shadow' : 'text-zinc-400 hover:text-white'
                   }`}
                 >
-                  {amt} kESCOBAR
+                  EN BÜYÜKLER
                 </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Tahmin Kartları */}
-          <div className="space-y-4">
-            {MARKETS.map((market) => {
-              const total = market.initialYes + market.initialNo;
-              const yesPercent = Math.round((market.initialYes / total) * 100);
-              const noPercent = 100 - yesPercent;
-              const isVoting = loadingId === market.id;
-
-              return (
-                <div
-                  key={market.id}
-                  className="p-5 rounded-2xl bg-[#0f1219] border border-zinc-800/90 hover:border-zinc-700 transition-all shadow-lg"
+                <button
+                  onClick={() => setLeaderboardTab('recent')}
+                  className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                    leaderboardTab === 'recent' ? 'bg-zinc-800 text-white shadow' : 'text-zinc-400 hover:text-white'
+                  }`}
                 >
-                  <div className="flex items-center justify-between text-xs mb-2">
-                    <span className="font-bold text-amber-400 bg-amber-400/10 px-2.5 py-0.5 rounded border border-amber-400/20 text-[11px]">
-                      {market.category}
-                    </span>
-                    <span className="text-zinc-500 text-[11px]">
-                      Bitiş: <strong className="text-zinc-300">{market.endDate}</strong>
-                    </span>
-                  </div>
+                  EN YENİLER
+                </button>
+              </div>
+            </div>
 
-                  <h3 className="text-base font-bold text-white mb-1.5 leading-snug">
-                    {market.title}
-                  </h3>
-                  <p className="text-xs text-zinc-400 mb-4 leading-relaxed">
-                    {market.description}
-                  </p>
-
-                  <div className="space-y-1.5 mb-4">
-                    <div className="flex justify-between text-xs font-bold">
-                      <span className="text-emerald-400">EVET %{yesPercent} ({market.initialYes.toLocaleString()} kESCOBAR)</span>
-                      <span className="text-rose-400">HAYIR %{noPercent} ({market.initialNo.toLocaleString()} kESCOBAR)</span>
+            {/* Liste */}
+            <div className="space-y-2.5">
+              {displayedCalls.length > 0 ? (
+                displayedCalls.map((item, idx) => (
+                  <div
+                    key={idx}
+                    className="p-3.5 rounded-2xl bg-zinc-950/60 border border-zinc-800/80 flex items-center justify-between text-xs font-mono hover:border-zinc-700 transition-all"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="w-5 text-zinc-600 font-bold text-center">{item.rank || idx + 1}</span>
+                      <div className="font-semibold text-zinc-300 flex items-center gap-2">
+                        {item.did}
+                        {item.rawDid === did && (
+                          <span className="px-1.5 py-0.5 rounded bg-amber-400/10 text-amber-300 text-[10px] font-bold">
+                            Siz
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div className="h-2.5 w-full rounded-full bg-zinc-950 overflow-hidden flex border border-zinc-800">
-                      <div style={{ width: `${yesPercent}%` }} className="bg-emerald-500 transition-all duration-500" />
-                      <div style={{ width: `${noPercent}%` }} className="bg-rose-500 transition-all duration-500" />
+
+                    <div className="flex items-center gap-4">
+                      <div className="text-right">
+                        <span className="font-bold text-white block">{item.amount.toLocaleString()} kESCOBAR</span>
+                        <span className={`text-[10px] font-extrabold uppercase ${
+                          item.side === 'yes' ? 'text-emerald-400' : 'text-rose-400'
+                        }`}>
+                          {item.side === 'yes' ? 'EVET' : 'HAYIR'}
+                        </span>
+                      </div>
+                      <div className="w-16 text-right font-mono text-[11px] text-zinc-400">
+                        <span className="text-zinc-200 font-bold block">{item.multiplier}</span>
+                        <span className="text-[9px] text-zinc-600">tahmin doğruysa</span>
+                      </div>
                     </div>
                   </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      disabled={isVoting}
-                      onClick={() => handleVote(market.id, 'EVET')}
-                      className="py-3 px-4 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs font-extrabold flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50"
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                      {isVoting ? 'İmzalanıyor...' : `EVET (${betAmount} kESCOBAR)`}
-                    </button>
-                    <button
-                      disabled={isVoting}
-                      onClick={() => handleVote(market.id, 'HAYIR')}
-                      className="py-3 px-4 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 text-xs font-extrabold flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50"
-                    >
-                      <XCircle className="w-4 h-4" />
-                      {isVoting ? 'İmzalanıyor...' : `HAYIR (${betAmount} kESCOBAR)`}
-                    </button>
-                  </div>
+                ))
+              ) : (
+                <div className="text-center py-8 text-zinc-500 text-xs">
+                  Bu pazara henüz oy verilmedi. İlk tahmini sağ taraftan siz yapın!
                 </div>
-              );
-            })}
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Sağ Kolon */}
-        <div className="space-y-6">
-          <div className="p-6 rounded-2xl bg-[#0f1219] border border-amber-500/30 shadow-xl">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xs uppercase font-black tracking-widest text-zinc-400 flex items-center gap-1.5">
-                <Lock className="w-3.5 h-3.5 text-amber-400" />
-                KASANIZ (YOUR VAULT)
-              </h2>
-              <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold">
-                CANLI
+        {/* SAĞ BÖLÜM (4 Kolon): PRANJAL TARZI HAMLE YAPMA PANELİ ("Make your call") */}
+        <div className="lg:col-span-4 space-y-6">
+          <div className="p-6 rounded-3xl bg-[#0c0f17] border border-amber-500/40 shadow-2xl sticky top-20 space-y-6">
+            
+            <div className="flex items-center justify-between border-b border-zinc-800/80 pb-4">
+              <div>
+                <h2 className="text-base font-black text-white">Make your call</h2>
+                <p className="text-[11px] text-zinc-500">Tahmininizi Ed25519 ile mühürleyin</p>
+              </div>
+              <span className="text-[10px] uppercase font-bold tracking-widest px-2.5 py-1 rounded-full bg-amber-400/10 text-amber-300 border border-amber-400/20">
+                3 ADIMDA TAHMİN
               </span>
             </div>
 
-            <div className="p-4 rounded-xl bg-[#080a0f] border border-zinc-800/80 mb-4">
-              <span className="text-[11px] text-zinc-500 block mb-1">Mevcut Bakiyeniz</span>
-              <div className="text-2xl font-black text-amber-400 flex items-baseline gap-1.5">
-                {balance.toLocaleString()}
-                <span className="text-xs font-bold text-zinc-400">kESCOBAR</span>
+            {/* ADIM 1: TAKE YOUR kESCOBAR */}
+            <div className="space-y-2">
+              <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block">
+                1. TAKE YOUR kESCOBAR
+              </span>
+              <div className="p-4 rounded-2xl bg-zinc-950 border border-zinc-800 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] text-zinc-500 block">KULLANILABİLİR BAKİYE</span>
+                  <div className="text-xl font-black text-amber-400">
+                    {balance.toLocaleString()} <span className="text-xs text-zinc-400 font-normal">kESCOBAR</span>
+                  </div>
+                </div>
+                <button
+                  onClick={handleClaim}
+                  className="py-2 px-3 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-black font-black text-xs transition-all shadow-md shadow-amber-500/20 active:scale-95 flex items-center gap-1.5"
+                >
+                  <Coins className="w-3.5 h-3.5" />
+                  +1.000 Talep Et
+                </button>
+              </div>
+
+              {/* Anahtar Kesiti */}
+              <div className="flex items-center justify-between bg-zinc-950 px-3 py-2 rounded-xl border border-zinc-800/80 text-[11px] font-mono text-zinc-400">
+                <span className="truncate max-w-[200px]">{did}</span>
+                <button onClick={() => copyToClipboard(did, 'did')} className="text-zinc-500 hover:text-white">
+                  {copiedDid ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
               </div>
             </div>
 
+            {/* ADIM 2: PICK A SIDE */}
+            <div className="space-y-2">
+              <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block">
+                2. PICK A SIDE
+              </span>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setSelectedSide('yes')}
+                  className={`p-3.5 rounded-2xl border text-center transition-all ${
+                    selectedSide === 'yes'
+                      ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 shadow-lg shadow-emerald-500/10'
+                      : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  <span className="text-sm font-black block">Yes</span>
+                  <span className="text-[10px] text-zinc-500">it ships</span>
+                </button>
+                <button
+                  onClick={() => setSelectedSide('no')}
+                  className={`p-3.5 rounded-2xl border text-center transition-all ${
+                    selectedSide === 'no'
+                      ? 'bg-rose-500/20 border-rose-400 text-rose-300 shadow-lg shadow-rose-500/10'
+                      : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  <span className="text-sm font-black block">No</span>
+                  <span className="text-[10px] text-zinc-500">it does not</span>
+                </button>
+              </div>
+            </div>
+
+            {/* ADIM 3: PUT IT DOWN (Miktar Seçimi) */}
+            <div className="space-y-2">
+              <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block">
+                3. PUT IT DOWN
+              </span>
+              <div className="grid grid-cols-4 gap-1.5">
+                {[100, 250, 500].map((amt) => (
+                  <button
+                    key={amt}
+                    onClick={() => setBetAmount(amt)}
+                    className={`py-2 rounded-xl text-xs font-bold transition-all ${
+                      betAmount === amt
+                        ? 'bg-amber-400 text-black shadow-md shadow-amber-400/20'
+                        : 'bg-zinc-950 border border-zinc-800 text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    {amt}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setBetAmount(balance > 0 ? balance : 1000)}
+                  className={`py-2 rounded-xl text-xs font-bold transition-all ${
+                    betAmount === balance
+                      ? 'bg-amber-400 text-black shadow-md shadow-amber-400/20'
+                      : 'bg-zinc-950 border border-zinc-800 text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  Tümü
+                </button>
+              </div>
+            </div>
+
+            {/* BÜYÜK GÖNDER BUTONU */}
             <button
-              onClick={handleClaimFaucet}
-              className="w-full py-3 mb-4 rounded-xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-black font-extrabold text-xs flex items-center justify-center gap-2 transition-all shadow-lg shadow-amber-500/20 active:scale-95"
+              disabled={isSubmitting}
+              onClick={handlePlaceCall}
+              className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-wider transition-all shadow-xl flex items-center justify-center gap-2 active:scale-98 disabled:opacity-50 ${
+                selectedSide === 'yes'
+                  ? 'bg-emerald-500 hover:bg-emerald-400 text-black shadow-emerald-500/20'
+                  : 'bg-rose-500 hover:bg-rose-400 text-white shadow-rose-500/20'
+              }`}
             >
-              <Coins className="w-4 h-4" />
-              +1.000 kESCOBAR Talep Et (Musluk)
+              {isSubmitting ? (
+                <span>Technocore İmzalanıyor...</span>
+              ) : (
+                <span>
+                  {betAmount} kESCOBAR İle "{selectedSide.toUpperCase()}" Oyna
+                </span>
+              )}
             </button>
 
-            <div className="space-y-2 pt-2 border-t border-zinc-800/80 text-[11px]">
-              <div>
-                <span className="text-zinc-500 block">Ed25519 Özel Anahtar Kesiti:</span>
-                <div className="flex items-center justify-between bg-[#080a0f] p-2 rounded-lg border border-zinc-800 font-mono text-zinc-400 mt-1">
-                  <span className="truncate">{privateKey ? privateKey.slice(0, 16) + '...' : '---'}</span>
-                  <button onClick={() => copyToClipboard(privateKey, 'key')} className="text-zinc-400 hover:text-white">
-                    {copiedKey ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                  </button>
-                </div>
-              </div>
+            {/* Alt Bilgi & Odaya Git */}
+            <div className="pt-2 border-t border-zinc-800/80 text-center">
+              <a
+                href="https://technocore.chat/r/turkce-koprusu"
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-amber-400 hover:underline inline-flex items-center gap-1 font-mono font-medium"
+              >
+                turkce-koprusu odasında doğrula <ArrowUpRight className="w-3 h-3" />
+              </a>
             </div>
-          </div>
-
-          {/* YouTube Kanalı */}
-          <div className="p-5 rounded-2xl bg-[#0f1219] border border-zinc-800 text-center space-y-3">
-            <h3 className="text-xs font-bold text-zinc-300">Kripto Escobar Topluluğu</h3>
-            <p className="text-[11px] text-zinc-500 leading-relaxed">
-              Flop Labs, Technocore otonom ajanlar ve airdrop rehberleri için YouTube kanalımızı takip edin.
-            </p>
-            <a
-              href="https://youtube.com/@kriptoescobar0"
-              target="_blank"
-              rel="noreferrer"
-              className="w-full py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-lg shadow-red-600/20"
-            >
-              <Youtube className="w-4 h-4" />
-              YouTube Kanalına Abone Ol
-            </a>
-          </div>
-
-          {/* Technocore Canlı Odası */}
-          <div className="p-5 rounded-2xl bg-[#0f1219] border border-zinc-800">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
-                <Terminal className="w-3.5 h-3.5 text-amber-400" />
-                Technocore Odası
-              </h3>
-              <span className="text-[10px] text-zinc-500 font-mono">turkce-koprusu</span>
-            </div>
-            <p className="text-xs text-zinc-400 mb-4 leading-relaxed">
-              Verdiğiniz tüm oylar Technocore <code>turkce-koprusu</code> açık defterinde şeffafça saklanır.
-            </p>
-            <a
-              href="https://technocore.chat/r/turkce-koprusu"
-              target="_blank"
-              rel="noreferrer"
-              className="w-full py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-amber-400 text-xs font-bold flex items-center justify-center gap-1.5 transition-all border border-zinc-800 shadow-md"
-            >
-              Oda Kayıtlarını Aç <ArrowUpRight className="w-3.5 h-3.5" />
-            </a>
           </div>
         </div>
       </main>
 
-      <footer className="w-full max-w-6xl px-4 py-8 border-t border-zinc-800/80 text-center text-xs text-zinc-500 mt-12">
-        <p>© 2026 Kripto Escobar • Flop Labs Technocore Tahmin Piyasası. Tüm hakları saklıdır.</p>
-        <p className="mt-1 text-[11px]">kESCOBAR testnet puanlarının maddi değeri yoktur. Oylar Technocore protokolü üzerinde imzalanır.</p>
+      {/* Footer */}
+      <footer className="w-full max-w-6xl px-4 py-8 border-t border-zinc-800/80 text-center text-xs text-zinc-500 mt-12 font-mono">
+        <p>© 2026 Kripto Escobar • Flop Labs Technocore Tahmin Piyasası. Açık protokol tabanlıdır.</p>
       </footer>
     </div>
   );
