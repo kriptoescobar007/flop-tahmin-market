@@ -15,14 +15,16 @@ import {
   Upload, 
   KeyRound, 
   Layers, 
-  Radio, 
   ShieldCheck, 
   CheckCircle2, 
   AlertTriangle,
   Database,
   Award,
   Flame,
-  Sparkles
+  Sparkles,
+  Dices,
+  MessageSquare,
+  Send
 } from 'lucide-react';
 
 interface ParsedCall {
@@ -38,22 +40,30 @@ interface ParsedCall {
   multiplier: string;
 }
 
-interface NetworkLog {
+interface WallPost {
   id: string;
-  sender: string;
   did: string;
-  action: string;
-  tag: string;
-  timeAgo: string;
-  content: string;
+  text: string;
+  time: string;
+}
+
+interface FlipHistory {
+  id: string;
+  choice: 'yazi' | 'tura';
+  result: 'yazi' | 'tura';
+  won: boolean;
+  amount: number;
+  time: string;
 }
 
 const STORAGE_KEY_CALLS = 'kescobar_permanent_calls_v2';
 const STORAGE_KEY_GM_DATE = 'kescobar_last_gm_date';
 const STORAGE_KEY_STREAK = 'kescobar_gm_streak';
+const STORAGE_KEY_WALL = 'kescobar_wall_posts_v2';
+const STORAGE_KEY_FLIPS = 'kescobar_flip_history_v2';
 
 export default function Home() {
-  const [activePortalTab, setActivePortalTab] = useState<'market' | 'radar' | 'proves' | 'passport'>('market');
+  const [activePortalTab, setActivePortalTab] = useState<'market' | 'passport' | 'arena' | 'proves'>('market');
 
   const [selectedMarketId, setSelectedMarketId] = useState<string>('flop-mainnet-2027');
   const [selectedSide, setSelectedSide] = useState<'yes' | 'no'>('yes');
@@ -68,13 +78,24 @@ export default function Home() {
   const [copiedKey, setCopiedKey] = useState(false);
   const [copiedDid, setCopiedDid] = useState(false);
 
-  // Pasaport & Günlük GM State'leri
+  // Pasaport State'leri
   const [gmStreak, setGmStreak] = useState<number>(1);
   const [hasClaimedGmToday, setHasClaimedGmToday] = useState<boolean>(false);
 
+  // Yazı-Tura Düello State'leri
+  const [coinChoice, setCoinChoice] = useState<'yazi' | 'tura'>('yazi');
+  const [coinBetAmount, setCoinBetAmount] = useState<number>(100);
+  const [isFlipping, setIsFlipping] = useState<boolean>(false);
+  const [flipResultText, setFlipResultText] = useState<string | null>(null);
+  const [flipHistory, setFlipHistory] = useState<FlipHistory[]>([]);
+
+  // Ajan Duvarı State'leri
+  const [wallInput, setWallInput] = useState<string>('');
+  const [isPostingWall, setIsPostingWall] = useState<boolean>(false);
+  const [wallPosts, setWallPosts] = useState<WallPost[]>([]);
+
   // Kalıcı Tahmin State'i
   const [allCalls, setAllCalls] = useState<ParsedCall[]>([]);
-  const [networkLogs, setNetworkLogs] = useState<NetworkLog[]>([]);
   const [leaderboardTab, setLeaderboardTab] = useState<'biggest' | 'recent'>('biggest');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [statusNotice, setStatusNotice] = useState<{ type: 'success' | 'info' | 'error'; text: string } | null>(null);
@@ -105,13 +126,33 @@ export default function Home() {
       setHasClaimedGmToday(true);
     }
 
+    // Yerel Hafızaları Yükle
     const storedCalls = localStorage.getItem(STORAGE_KEY_CALLS);
     if (storedCalls) {
       try {
         const parsed = JSON.parse(storedCalls);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setAllCalls(parsed);
-        }
+        if (Array.isArray(parsed)) setAllCalls(parsed);
+      } catch (_) {}
+    }
+
+    const storedWall = localStorage.getItem(STORAGE_KEY_WALL);
+    if (storedWall) {
+      try {
+        const parsed = JSON.parse(storedWall);
+        if (Array.isArray(parsed)) setWallPosts(parsed);
+      } catch (_) {}
+    } else {
+      setWallPosts([
+        { id: '1', did: 'did:key:z6Mkesc...', text: 'Kripto Escobar topluluğu Technocore ağında ilk imzasını attı! 🚀', time: '10 dk önce' },
+        { id: '2', did: 'did:key:z6Mkj7q...', text: 'Flop Labs 2027 Mainnet tahminine 1.000 EVET bastım.', time: '25 dk önce' }
+      ]);
+    }
+
+    const storedFlips = localStorage.getItem(STORAGE_KEY_FLIPS);
+    if (storedFlips) {
+      try {
+        const parsed = JSON.parse(storedFlips);
+        if (Array.isArray(parsed)) setFlipHistory(parsed);
       } catch (_) {}
     }
 
@@ -144,37 +185,12 @@ export default function Home() {
   const mergeRoomData = (text: string) => {
     const lines = text.split('\n');
     const validMarkets = MARKETS.map(m => m.id);
-    const radLogs: NetworkLog[] = [];
 
     let currentMap = new Map<string, ParsedCall>();
     allCalls.forEach(c => currentMap.set(c.nonce, c));
 
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY_CALLS);
-      if (stored) {
-        const parsed: ParsedCall[] = JSON.parse(stored);
-        parsed.forEach(c => currentMap.set(c.nonce, c));
-      }
-    } catch (_) {}
-
     lines.forEach((line, index) => {
       if (line.includes('call1 {')) {
-        const senderMatch = line.match(/<([^>]+)>/);
-        const sender = senderMatch ? senderMatch[1] : 'Ajan';
-        const isCall = line.includes('"type":"call"');
-        const isTap = line.includes('"type":"tap"');
-        const isGm = line.includes('"type":"gm"');
-
-        radLogs.push({
-          id: `log-${index}-${Date.now()}`,
-          sender: sender,
-          did: sender.startsWith('esc_') ? `did:key:...${sender.replace('esc_', '')}` : sender,
-          action: isCall ? 'Tahmin İmzası' : isTap ? 'Musluk Talebi' : isGm ? 'Günlük GM' : 'Ağ İletişimi',
-          tag: isCall ? 'TAHMİN' : isTap ? 'MUSLUK' : isGm ? 'GM' : 'LOG',
-          timeAgo: `${Math.max(1, (lines.length - index) * 2)} dk önce`,
-          content: line.slice(line.indexOf('call1 {'), line.indexOf('call1 {') + 90) + '...'
-        });
-
         try {
           const jsonStr = line.substring(line.indexOf('call1 {') + 6);
           const data = JSON.parse(jsonStr);
@@ -209,10 +225,6 @@ export default function Home() {
     const mergedArray = Array.from(currentMap.values());
     localStorage.setItem(STORAGE_KEY_CALLS, JSON.stringify(mergedArray));
     setAllCalls(mergedArray);
-
-    if (radLogs.length > 0) {
-      setNetworkLogs(radLogs.reverse().slice(0, 15));
-    }
   };
 
   const marketCalls = allCalls.filter(c => c.market === selectedMarketId);
@@ -320,7 +332,7 @@ export default function Home() {
     notify('success', '1.000 kESCOBAR bakiyeniz tanımlandı!');
   };
 
-  // Günlük GM İmzası ve Seri Sistemi
+  // Günlük GM İmzası
   const handleClaimDailyGm = async () => {
     if (hasClaimedGmToday) {
       notify('info', 'Bugünkü GM imzanızı zaten attınız. Yarın tekrar gelin!');
@@ -357,7 +369,108 @@ export default function Home() {
     notify('success', `Harika! Günlük GM imzalandı. 🔥 ${newStreak}. Gün Serisi! +250 kESCOBAR eklendi.`);
   };
 
-  // Airdrop Skor Hesaplaması (0 - 100)
+  // 1. OYUNCAK: Kriptografik Yazı-Tura Fonksiyonu
+  const handleFlipCoin = async () => {
+    if (balance < coinBetAmount) {
+      notify('error', 'Yetersiz kESCOBAR! Lütfen tahmin piyasasından musluk talebi yapın.');
+      return;
+    }
+
+    setIsFlipping(true);
+    setFlipResultText('Para havada dönüyor...');
+
+    const outcome: 'yazi' | 'tura' = Math.random() < 0.5 ? 'yazi' : 'tura';
+    const isWin = outcome === coinChoice;
+
+    setTimeout(async () => {
+      setIsFlipping(false);
+      const newBal = isWin ? balance + coinBetAmount : balance - coinBetAmount;
+      setBalance(newBal);
+      localStorage.setItem('kescobar_balance', newBal.toString());
+
+      const resultMsg = isWin 
+        ? `🎉 KAZANDIN! Para ${outcome.toUpperCase()} geldi. +${coinBetAmount * 2} kESCOBAR!` 
+        : `Kaybettin. Para ${outcome.toUpperCase()} geldi. -${coinBetAmount} kESCOBAR.`;
+      setFlipResultText(resultMsg);
+
+      const flipItem: FlipHistory = {
+        id: Math.random().toString(16).slice(2, 8),
+        choice: coinChoice,
+        result: outcome,
+        won: isWin,
+        amount: coinBetAmount,
+        time: 'Az önce'
+      };
+
+      const updatedHistory = [flipItem, ...flipHistory.slice(0, 9)];
+      setFlipHistory(updatedHistory);
+      localStorage.setItem(STORAGE_KEY_FLIPS, JSON.stringify(updatedHistory));
+
+      // Technocore Odasına Şeffaf Zar İmzası
+      const sender = `esc_${did.replace(/[^a-zA-Z0-9]/g, '').slice(-8)}`;
+      const flipPayload = `call1 ` + JSON.stringify({
+        from: did,
+        game: 'coinflip',
+        choice: coinChoice,
+        outcome: outcome,
+        won: isWin,
+        amount: coinBetAmount,
+        nonce: Math.random().toString(16).substring(2, 14)
+      });
+
+      try {
+        await fetch(`https://technocore.chat/r/turkce-koprusu/say/${sender}/${encodeURIComponent(flipPayload)}`, {
+          method: 'GET',
+          mode: 'no-cors'
+        });
+      } catch (_) {}
+    }, 1500);
+  };
+
+  // 2. OYUNCAK: Anonim Ajan Duvarına Not Kazıma
+  const handlePostWall = async () => {
+    if (!wallInput.trim()) return;
+    if (wallInput.length > 80) {
+      notify('error', 'Mesajınız en fazla 80 karakter olabilir.');
+      return;
+    }
+
+    setIsPostingWall(true);
+    const shortDid = did.length > 18 ? `${did.slice(0, 8)}...${did.slice(-5)}` : did;
+    const newPost: WallPost = {
+      id: Math.random().toString(16).slice(2, 8),
+      did: shortDid,
+      text: wallInput.trim(),
+      time: 'Az önce'
+    };
+
+    const updatedWall = [newPost, ...wallPosts.slice(0, 19)];
+    setWallPosts(updatedWall);
+    localStorage.setItem(STORAGE_KEY_WALL, JSON.stringify(updatedWall));
+
+    const sender = `esc_${did.replace(/[^a-zA-Z0-9]/g, '').slice(-8)}`;
+    const wallPayload = `call1 ` + JSON.stringify({
+      from: did,
+      type: 'wall',
+      msg: wallInput.trim(),
+      nonce: Math.random().toString(16).substring(2, 14)
+    });
+
+    try {
+      await fetch(`https://technocore.chat/r/turkce-koprusu/say/${sender}/${encodeURIComponent(wallPayload)}`, {
+        method: 'GET',
+        mode: 'no-cors'
+      });
+      setWallInput('');
+      notify('success', 'Mesajınız Technocore açık duvarına kalıcı olarak kazındı!');
+    } catch (_) {
+      notify('error', 'Ağa iletilemedi ancak yerel terminalde kaydedildi.');
+    } finally {
+      setIsPostingWall(false);
+    }
+  };
+
+  // Airdrop Skor Hesaplaması
   const myTotalVotes = allCalls.filter(c => c.rawDid === did).length;
   const airdropScore = Math.min(100, (did ? 25 : 0) + (myTotalVotes * 15) + (gmStreak * 10) + (balance > 0 ? 15 : 0));
   const agentRankTitle = airdropScore >= 75 ? 'Escobar Elit Ajanı' : airdropScore >= 40 ? 'Aktif Kaşif Ajan' : 'Çaylak Ajan';
@@ -468,11 +581,11 @@ export default function Home() {
                 <span className="text-[11px] text-zinc-500">|</span>
                 <span className="text-xs font-semibold text-zinc-300">Flop Labs Technocore Portalı</span>
               </div>
-              <p className="text-[11px] text-zinc-500 font-mono tracking-normal">Ajan Kimliği, Canlı Radar & Tahmin Piyasası</p>
+              <p className="text-[11px] text-zinc-500 font-mono tracking-normal">Ajan Kimliği & Tahmin Piyasası</p>
             </div>
           </div>
 
-          {/* Portal Sekmeleri */}
+          {/* Portal Sekmeleri (4 Adet) */}
           <nav className="flex items-center gap-1 bg-zinc-950 p-1 rounded-xl border border-zinc-800 text-xs font-semibold">
             <button
               onClick={() => setActivePortalTab('market')}
@@ -493,13 +606,13 @@ export default function Home() {
               Ajan Pasaportu
             </button>
             <button
-              onClick={() => setActivePortalTab('radar')}
+              onClick={() => setActivePortalTab('arena')}
               className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
-                activePortalTab === 'radar' ? 'bg-amber-400 text-black font-bold shadow' : 'text-zinc-400 hover:text-white'
+                activePortalTab === 'arena' ? 'bg-amber-400 text-black font-bold shadow' : 'text-zinc-400 hover:text-white'
               }`}
             >
-              <Radio className="w-3.5 h-3.5" />
-              Ağ Radarı
+              <Dices className="w-3.5 h-3.5" />
+              Düello & Duvar
             </button>
             <button
               onClick={() => setActivePortalTab('proves')}
@@ -550,13 +663,13 @@ export default function Home() {
         <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight text-white mb-2">
           {activePortalTab === 'market' && 'Piyasayı öngör. Tahminini imzala.'}
           {activePortalTab === 'passport' && 'Ajan Pasaportu & Airdrop Karnesi.'}
-          {activePortalTab === 'radar' && 'Ağ Radarı: Technocore üzerinde canlı akış.'}
+          {activePortalTab === 'arena' && 'Ajan Arenası: Yazı-Tura Düellosu & Anonim Duvar.'}
           {activePortalTab === 'proves' && 'Protokol Şeffaflığı: Neyi kanıtlar, neyi kanıtlamaz?'}
         </h1>
         <p className="text-xs md:text-sm text-zinc-400 max-w-2xl leading-relaxed">
           {activePortalTab === 'market' && 'Tarayıcınızda Ed25519 ile tahmin yapın. Veritabanı ve sunucu bulunmaz; tüm oylar turkce-koprusu odasında kriptografik olarak saklanır.'}
           {activePortalTab === 'passport' && 'Ağdaki aktivitenizi puanlayın, her gün gelip serinizi koruyarak kESCOBAR kazanın ve airdrop skorunuzu tescilleyin.'}
-          {activePortalTab === 'radar' && 'Flop Labs Technocore açık log defterindeki gerçek zamanlı tahmin ve musluk hareketlerini izleyin.'}
+          {activePortalTab === 'arena' && 'Kriptografik yazı-tura ile puanını katla veya Technocore açık log defterine sansürsüz mesajını imzalayarak duvara kazı.'}
           {activePortalTab === 'proves' && 'Merkeziyetsiz Ed25519 kriptografik imzalarıyla nelerin garanti edildiğini ve testnet sınırlarını inceleyin.'}
         </p>
       </section>
@@ -840,31 +953,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Bilgi Rozetleri */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-zinc-400 pt-1">
-                <div className="p-3 rounded-xl bg-[#0c0f17] border border-zinc-800/60 flex items-center gap-3">
-                  <Lock className="w-4 h-4 text-amber-400 shrink-0" />
-                  <div>
-                    <span className="font-bold text-white block text-[11px]">HER TAHMİN İMZALI</span>
-                    <span className="text-[10px] text-zinc-500 font-mono">Ed25519 yerel anahtar</span>
-                  </div>
-                </div>
-                <div className="p-3 rounded-xl bg-[#0c0f17] border border-zinc-800/60 flex items-center gap-3">
-                  <Activity className="w-4 h-4 text-cyan-400 shrink-0" />
-                  <div>
-                    <span className="font-bold text-white block text-[11px]">TECHNOCORE AĞI</span>
-                    <span className="text-[10px] text-zinc-500 font-mono">turkce-koprusu odası</span>
-                  </div>
-                </div>
-                <div className="p-3 rounded-xl bg-[#0c0f17] border border-zinc-800/60 flex items-center gap-3">
-                  <Terminal className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <div>
-                    <span className="font-bold text-white block text-[11px]">KALICI PROTOKOL</span>
-                    <span className="text-[10px] text-zinc-500 font-mono">Tekil Nonce ile şifrelendi</span>
-                  </div>
-                </div>
-              </div>
-
               {/* Sayaç Çubuğu */}
               <div className="p-4 rounded-xl bg-[#0c0f17] border border-zinc-800 flex flex-wrap items-center justify-between gap-4 text-xs font-mono">
                 <div>
@@ -1093,11 +1181,10 @@ export default function Home() {
       )}
 
       {/* ======================================================== */}
-      {/* 2. SEKME: AJAN PASAPORTU & GÜNLÜK GM SERİSİ */}
+      {/* 2. SEKME: AJAN PASAPORTU */}
       {/* ======================================================== */}
       {activePortalTab === 'passport' && (
         <section className="w-full max-w-4xl px-4 py-8 space-y-8">
-          {/* Günlük GM Kartı */}
           <div className="p-6 rounded-3xl bg-gradient-to-r from-amber-500/10 via-[#0c0f17] to-[#0c0f17] border border-amber-500/40 shadow-2xl flex flex-wrap items-center justify-between gap-6">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
@@ -1129,7 +1216,6 @@ export default function Home() {
             </button>
           </div>
 
-          {/* Pasaport Kartı */}
           <div className="p-8 rounded-3xl bg-[#0c0f17] border border-zinc-800 shadow-2xl space-y-6 relative overflow-hidden">
             <div className="absolute top-0 right-0 w-96 h-96 bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
 
@@ -1144,15 +1230,12 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <span className="px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  DOĞRULANMIŞ AJAN
-                </span>
-              </div>
+              <span className="px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                DOĞRULANMIŞ AJAN
+              </span>
             </div>
 
-            {/* Pasaport Gövdesi */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="p-4 rounded-2xl bg-zinc-950/70 border border-zinc-800/80 space-y-1">
                 <span className="text-[10px] text-zinc-500 uppercase font-mono block">AİRDROP SKORU</span>
@@ -1186,7 +1269,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Detay Satırları */}
             <div className="p-4 rounded-2xl bg-zinc-950/40 border border-zinc-800/60 space-y-2.5 text-xs font-mono">
               <div className="flex justify-between items-center">
                 <span className="text-zinc-500">DID Adresi:</span>
@@ -1205,107 +1287,176 @@ export default function Home() {
                 <span className="text-white font-bold">{balance.toLocaleString()} kESCOBAR</span>
               </div>
             </div>
-
-            {/* Rozetler */}
-            <div>
-              <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider block mb-3">
-                Kazanılan Protokol Rozetleri
-              </span>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center gap-2.5">
-                  <Award className="w-5 h-5 text-amber-400 shrink-0" />
-                  <div>
-                    <h4 className="text-xs font-bold text-white">Erken Kaşif</h4>
-                    <p className="text-[10px] text-zinc-500">Technocore testnetine katıldı</p>
-                  </div>
-                </div>
-
-                <div className={`p-3 rounded-xl border flex items-center gap-2.5 ${
-                  myTotalVotes >= 3 
-                    ? 'bg-zinc-950 border-emerald-500/40 text-white' 
-                    : 'bg-zinc-950/40 border-zinc-900 text-zinc-600'
-                }`}>
-                  <Sparkles className={`w-5 h-5 shrink-0 ${myTotalVotes >= 3 ? 'text-emerald-400' : 'text-zinc-600'}`} />
-                  <div>
-                    <h4 className="text-xs font-bold">Usta Tahminci</h4>
-                    <p className="text-[10px]">{myTotalVotes >= 3 ? 'Kazanıldı ✓' : '3 Tahmin Yap'}</p>
-                  </div>
-                </div>
-
-                <div className={`p-3 rounded-xl border flex items-center gap-2.5 ${
-                  gmStreak >= 3 
-                    ? 'bg-zinc-950 border-orange-500/40 text-white' 
-                    : 'bg-zinc-950/40 border-zinc-900 text-zinc-600'
-                }`}>
-                  <Flame className={`w-5 h-5 shrink-0 ${gmStreak >= 3 ? 'text-orange-500 fill-orange-500' : 'text-zinc-600'}`} />
-                  <div>
-                    <h4 className="text-xs font-bold">Seri Muhafızı</h4>
-                    <p className="text-[10px]">{gmStreak >= 3 ? 'Kazanıldı ✓' : '3 Gün Üst Üste Gel'}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
         </section>
       )}
 
       {/* ======================================================== */}
-      {/* 3. SEKME: AĞ RADARI */}
+      {/* 3. SEKME: DÜELLO & AJAN DUVARI (BİRLEŞİK OYUN ALANI) */}
       {/* ======================================================== */}
-      {activePortalTab === 'radar' && (
-        <section className="w-full max-w-6xl px-4 py-8 space-y-6">
-          <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-[#0c0f17] border border-zinc-800">
-            <div>
-              <h3 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                Ağda Son Görülenler (Technocore Canlı Log Defteri)
-              </h3>
-              <p className="text-xs text-zinc-500 font-mono mt-0.5">
-                Technocore turkce-koprusu açık odasındaki canlı tahmin, musluk ve GM akışı
-              </p>
+      {activePortalTab === 'arena' && (
+        <section className="w-full max-w-6xl px-4 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
+          
+          {/* SOL: Kriptografik Yazı-Tura Düellosu */}
+          <div className="lg:col-span-6 space-y-6">
+            <div className="p-6 rounded-3xl bg-[#0c0f17] border border-zinc-800 shadow-xl space-y-5">
+              <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <Dices className="w-4 h-4 text-amber-400" />
+                  <h3 className="text-base font-extrabold text-white">Kriptografik Yazı-Tura</h3>
+                </div>
+                <span className="text-[10px] uppercase font-bold text-zinc-500 font-mono">
+                  Ed25519 Şeffaf Zar
+                </span>
+              </div>
+
+              {/* Madeni Para Alanı */}
+              <div className="flex flex-col items-center justify-center p-6 bg-zinc-950/70 rounded-2xl border border-zinc-800">
+                <div className={`w-28 h-28 rounded-full border-4 border-amber-400/80 bg-gradient-to-tr from-amber-500/20 to-zinc-900 flex items-center justify-center shadow-xl shadow-amber-500/10 mb-3 ${
+                  isFlipping ? 'animate-spin' : ''
+                }`}>
+                  <span className="text-3xl font-black text-amber-300 uppercase tracking-wider">
+                    {coinChoice === 'yazi' ? 'Y' : 'T'}
+                  </span>
+                </div>
+                <span className="text-xs font-bold text-zinc-300 font-mono">
+                  {isFlipping ? 'Kriptografik İmza Üretiliyor...' : `Seçiminiz: ${coinChoice.toUpperCase()}`}
+                </span>
+                {flipResultText && (
+                  <p className="text-xs font-bold mt-2 text-center text-amber-400 font-mono">
+                    {flipResultText}
+                  </p>
+                )}
+              </div>
+
+              {/* Taraf Seçimi (YAZI / TURA) */}
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setCoinChoice('yazi')}
+                  className={`py-3 rounded-xl text-xs font-bold border transition-all ${
+                    coinChoice === 'yazi'
+                      ? 'bg-amber-400 text-black border-amber-400 shadow-md shadow-amber-400/20'
+                      : 'bg-zinc-950 text-zinc-400 border-zinc-800 hover:text-white'
+                  }`}
+                >
+                  YAZI
+                </button>
+                <button
+                  onClick={() => setCoinChoice('tura')}
+                  className={`py-3 rounded-xl text-xs font-bold border transition-all ${
+                    coinChoice === 'tura'
+                      ? 'bg-amber-400 text-black border-amber-400 shadow-md shadow-amber-400/20'
+                      : 'bg-zinc-950 text-zinc-400 border-zinc-800 hover:text-white'
+                  }`}
+                >
+                  TURA
+                </button>
+              </div>
+
+              {/* Bahis Miktarı */}
+              <div className="grid grid-cols-3 gap-2">
+                {[50, 100, 250].map((amt) => (
+                  <button
+                    key={amt}
+                    onClick={() => setCoinBetAmount(amt)}
+                    className={`py-2 rounded-xl text-xs font-semibold border transition-all ${
+                      coinBetAmount === amt
+                        ? 'bg-zinc-800 text-amber-300 border-amber-400/40'
+                        : 'bg-zinc-950 text-zinc-500 border-zinc-800 hover:text-zinc-300'
+                    }`}
+                  >
+                    {amt} kESCOBAR
+                  </button>
+                ))}
+              </div>
+
+              {/* Çevir Butonu */}
+              <button
+                disabled={isFlipping}
+                onClick={handleFlipCoin}
+                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-black font-extrabold text-xs transition-all shadow-lg shadow-amber-500/20 active:scale-95 disabled:opacity-50"
+              >
+                {isFlipping ? 'Technocore Üzerinde Çevriliyor...' : `Kaderini İmzala (${coinBetAmount} kESCOBAR)`}
+              </button>
+
+              {/* Geçmiş Düellolar */}
+              <div className="pt-2 border-t border-zinc-800/80 space-y-2">
+                <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block">
+                  Son Düello Sonuçları
+                </span>
+                <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                  {flipHistory.length > 0 ? (
+                    flipHistory.map((item) => (
+                      <div key={item.id} className="p-2 rounded-xl bg-zinc-950/70 border border-zinc-800 text-[11px] font-mono flex items-center justify-between">
+                        <span className="text-zinc-400">{item.choice.toUpperCase()} seçildi → Geldi: {item.result.toUpperCase()}</span>
+                        <span className={`font-bold ${item.won ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {item.won ? `+${item.amount * 2}` : `-${item.amount}`}
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <span className="text-xs text-zinc-500">Henüz bir düello oynanmadı.</span>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {networkLogs.length > 0 ? (
-              networkLogs.map((log) => (
-                <div
-                  key={log.id}
-                  className="p-4 rounded-2xl bg-[#0c0f17] border border-zinc-800/90 hover:border-zinc-700 transition-all space-y-3 flex flex-col justify-between shadow-lg"
+          {/* SAĞ: Anonim Ajan Duvarı (Terminal Graffiti) */}
+          <div className="lg:col-span-6 space-y-6">
+            <div className="p-6 rounded-3xl bg-[#0c0f17] border border-zinc-800 shadow-xl space-y-4">
+              <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <Terminal className="w-4 h-4 text-emerald-400" />
+                  <h3 className="text-base font-extrabold text-white">Anonim Ajan Duvarı</h3>
+                </div>
+                <span className="text-[10px] uppercase font-bold text-emerald-400 font-mono">
+                  ● Sansürsüz Defter
+                </span>
+              </div>
+
+              <p className="text-xs text-zinc-400">
+                Technocore açık odasına kalıcı ve silinemez bir mesaj kazıyın. Her mesaj Ed25519 ile imzalanır.
+              </p>
+
+              {/* Mesaj Girişi */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  maxLength={80}
+                  placeholder="Technocore duvarına not kazı... (Maks 80 harf)"
+                  value={wallInput}
+                  onChange={(e) => setWallInput(e.target.value)}
+                  className="flex-1 p-3 bg-zinc-950 rounded-xl border border-zinc-800 text-xs font-mono text-white focus:outline-none focus:border-emerald-400"
+                />
+                <button
+                  disabled={isPostingWall || !wallInput.trim()}
+                  onClick={handlePostWall}
+                  className="px-4 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs flex items-center gap-1.5 transition-all disabled:opacity-50"
                 >
-                  <div>
-                    <div className="flex items-center justify-between text-[11px] mb-2 font-mono">
-                      <span className="px-2 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-amber-400 font-bold">
-                        {log.tag}
-                      </span>
-                      <span className="text-zinc-500">{log.timeAgo}</span>
-                    </div>
+                  <Send className="w-3.5 h-3.5" />
+                  İmzala
+                </button>
+              </div>
 
-                    <div className="flex items-center gap-2.5 mb-2">
-                      <div className="w-7 h-7 rounded-lg bg-amber-400/10 border border-amber-400/30 flex items-center justify-center font-bold text-amber-400 text-xs font-mono shrink-0">
-                        TC
-                      </div>
-                      <span className="text-xs font-bold text-zinc-200 font-mono truncate">
-                        {log.sender}
-                      </span>
+              {/* Duvar Gösterim Terminali */}
+              <div className="p-4 bg-zinc-950 rounded-2xl border border-zinc-800/90 font-mono space-y-3 max-h-96 overflow-y-auto">
+                <div className="text-[11px] text-zinc-500 border-b border-zinc-900 pb-2">
+                  // TECHNOCORE / TURKCE-KOPRUSU DUVAR AKIŞI
+                </div>
+                {wallPosts.map((post) => (
+                  <div key={post.id} className="text-xs space-y-0.5 border-b border-zinc-900/60 pb-2">
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="text-amber-400 font-bold">{post.did}</span>
+                      <span className="text-zinc-600">{post.time}</span>
                     </div>
-
-                    <p className="text-xs text-zinc-400 font-mono line-clamp-3 leading-relaxed break-all bg-zinc-950/70 p-2.5 rounded-xl border border-zinc-900">
-                      {log.content}
+                    <p className="text-zinc-300 text-[11px] break-words">
+                      &gt; {post.text}
                     </p>
                   </div>
-
-                  <div className="pt-2 border-t border-zinc-800/60 flex items-center justify-between text-[10px] text-zinc-500 font-mono">
-                    <span>Ed25519 Onaylı</span>
-                    <span className="text-emerald-400 font-bold">İmzalandı ✓</span>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="col-span-3 text-center py-16 text-zinc-500 text-xs font-mono">
-                Ağ logları taranıyor...
+                ))}
               </div>
-            )}
+            </div>
           </div>
         </section>
       )}
